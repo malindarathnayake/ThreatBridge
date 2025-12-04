@@ -211,7 +211,8 @@ GET /metrics                 # Prometheus metrics
 
 ## Configuration
 
-### feeds.yml
+<details>
+<summary><strong>feeds.yml</strong> - Feed configuration options</summary>
 
 Copy `config/feeds.sample.yml` to `config/feeds.yml` and customize:
 
@@ -231,11 +232,14 @@ settings:
   min_cidr_prefix: 20            # Min CIDR to expand (/20=4096 IPs max)
 ```
 
-> **Per-Feed Refresh Intervals:** Each feed can have its own `refresh_minutes` setting to override the global `reload_interval_minutes`. This is useful for feeds that don't update frequently - set a longer interval (e.g., `300` for 5 hours) to reduce unnecessary downloads.
+**Per-Feed Refresh:** Each feed can have its own `refresh_minutes` to override the global setting.
 
-> **CIDR Expansion**: Feeds with CIDR notation (e.g., `1.2.3.0/24`) are automatically expanded. The `min_cidr_prefix` setting limits expansion to prevent memory issues (default `/20` = max 4096 IPs per CIDR).
+**CIDR Expansion:** Feeds with CIDR notation are automatically expanded. `min_cidr_prefix` limits expansion (default `/20` = max 4096 IPs).
 
-### Environment Variables
+</details>
+
+<details>
+<summary><strong>Environment Variables</strong> - All configuration options</summary>
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -249,15 +253,17 @@ settings:
 | `PROOFPOINT_FEED_URL` | - | Proofpoint feed URL (optional) |
 | `LOADER_CHECK_INTERVAL` | 3600 | How often (seconds) the loader checks for feeds due for refresh |
 
-> **Changing the API Port:** To expose the API on a different host port (e.g., 9000), set `API_PORT=9000` in your `.env` file or pass it when starting Docker Compose:
-> ```bash
-> API_PORT=9000 docker-compose up -d
-> ```
-> The API will then be accessible at `http://localhost:9000`. The container internally still listens on port 8000.
+**Changing the API Port:**
+```bash
+API_PORT=9000 docker-compose up -d
+```
+
+</details>
 
 ## Domain Matching Logic
 
-The API implements PSL-aware domain matching:
+<details>
+<summary><strong>PSL-Aware Matching</strong> - How domain lookups work</summary>
 
 1. **Exact Match**: Check if domain exists directly in feeds
 2. **Parent Walk**: If no exact match and domain is subdomain:
@@ -271,11 +277,12 @@ The API implements PSL-aware domain matching:
 - `github.io` → walkable (special case registrable domain)
 - `user.github.io` → matches via parent `github.io`
 
+</details>
+
 ## Monitoring
 
-### Prometheus Metrics
-
-Key metrics exposed at `/metrics`:
+<details>
+<summary><strong>Prometheus Metrics</strong> - Available at /metrics</summary>
 
 - `ti_feed_entries_total` - Entry counts per feed
 - `ti_feed_last_load_timestamp` - Last successful load time
@@ -283,7 +290,12 @@ Key metrics exposed at `/metrics`:
 - `ti_lookup_duration_seconds` - Lookup latency histograms
 - `ti_redis_connection_status` - Redis connectivity
 
-### Health Monitoring
+📊 **[Full Metrics Reference](source/docs/prometheus-metrics.md)** - Complete metrics documentation with Grafana examples and alerting rules.
+
+</details>
+
+<details>
+<summary><strong>Health & Logs</strong> - Monitoring commands</summary>
 
 ```bash
 # Check API health
@@ -294,48 +306,34 @@ docker-compose ps
 
 # Check Redis
 docker-compose exec redis redis-cli ping
-```
 
-### Logs
-
-```bash
-# API logs
+# View logs
 docker-compose logs -f threatbridge
-
-# Redis logs  
 docker-compose logs -f redis
-
-# All logs
-docker-compose logs -f
 ```
+
+</details>
 
 ## Feed Management
 
-### Automatic Loading
+Feeds are loaded automatically on startup, every 60 minutes (configurable), and via manual refresh API.
 
-Feeds are loaded automatically:
-- On startup
-- Every 60 minutes (configurable)
-- Via manual refresh API
-
-### Manual Refresh
+<details>
+<summary><strong>Manual Refresh</strong></summary>
 
 ```bash
 # Via API (rate limited: once per 15 minutes)
 curl -X POST http://localhost:8000/feeds/malwareurl/refresh
 
-# Via management UI
-# Visit http://localhost:8000 and click "Refresh Feed"
+# Via management UI at http://localhost:8000
 ```
 
-### Adding New Feeds
+</details>
 
-1. Copy sample config if you haven't already:
-```bash
-cp config/feeds.sample.yml config/feeds.yml
-```
+<details>
+<summary><strong>Adding New Feeds</strong></summary>
 
-2. Edit `config/feeds.yml` - add your feed:
+1. Edit `config/feeds.yml`:
 ```yaml
 feeds:
   - name: new_feed
@@ -345,17 +343,14 @@ feeds:
     enabled: true
 ```
 
-3. If using `from env var:` syntax, add to `.env`:
+2. If using `from env var:`, add to `.env`:
 ```bash
 NEW_FEED_URL=https://your-feed-url
 ```
 
-4. Restart services:
-```bash
-docker-compose restart threatbridge
-```
+3. Restart: `docker-compose restart threatbridge`
 
-> **Note:** The sample file includes free feeds from Emerging Threats and CINS Army. See `config/feeds.sample.yml` for more examples.
+</details>
 
 ## Graylog Integration
 
@@ -384,136 +379,84 @@ end
 
 ## Development
 
-### Local Development
+<details>
+<summary><strong>Local Development</strong></summary>
 
 ```bash
-# Build docker-compose from root
-docker-compose build threatbridge
-
-# run compose file allows you to see the logs of the running containers for debugging
-docker-compose up 
-
-#Oneliner to build and run
+# Build and run
 docker compose up -d --build threatbridge
 
 # Check logs 
 docker compose logs threatbridge
 
-```
-
-### Testing
-
-```bash
-# Test individual components
-python -m pytest tests/
-
-# Test API endpoints
+# Test endpoints
 curl http://localhost:8000/health
 curl "http://localhost:8000/check/ip?ip=8.8.8.8"
 ```
 
-### Code Structure
+</details>
+
+<details>
+<summary><strong>Code Structure</strong></summary>
 
 ```
 source/
 ├── src/                    # Application source code
-│   ├── __init__.py
 │   ├── config.py          # Configuration management
 │   ├── models.py          # Pydantic data models
 │   ├── redis_client.py    # Redis connection and operations
 │   ├── psl_classifier.py  # Domain classification logic
 │   ├── metrics.py         # Prometheus metrics
 │   ├── loader.py          # Feed download and parsing
-│   ├── ti_api.py          # FastAPI application
-│   └── static/
-│       └── index.html     # Management UI
-├── config/                 # Configuration files
-│   ├── feeds.sample.yml   # Sample feed configuration
-│   └── feeds.yml          # Actual feed configuration (created by user)
+│   ├── ti_api.py          # FastAPI application (gunicorn + uvicorn workers)
+│   └── static/index.html  # Management UI
+├── config/                 # Feed configuration files
 └── docs/                   # Documentation
-    └── graylog-setup.md   # Graylog integration guide
-deploy/                     # User deployment files (pre-built images)
-├── docker-compose.yml     # Production deployment
-├── feeds.sample.yml       # Feed configuration template
-└── .env.example           # Environment variables template
+deploy/                     # Production deployment files
 ```
+
+</details>
 
 ## Troubleshooting
 
-### Common Issues
+<details>
+<summary><strong>Common Issues</strong></summary>
 
-**1. Redis Connection Failed**
+**Redis Connection Failed**
 ```bash
-# Check Redis status
 docker-compose ps redis
-
-# Check Redis logs
 docker-compose logs redis
-
-# Test Redis connectivity
 docker-compose exec redis redis-cli ping
 ```
 
-**2. Feed Download Errors**
+**Feed Download Errors**
 ```bash
-# Check API logs
 docker-compose logs threatbridge | grep -i error
-
-# Test feed URL manually
-curl -I $MALWAREURL_FEED_URL
-
-# Check feed metadata
 curl http://localhost:8000/feeds/malwareurl
 ```
 
-**3. High Memory Usage**
+**High Memory / Slow Lookups**
 ```bash
-# Check Redis memory usage
 docker-compose exec redis redis-cli info memory
-
-# Monitor feed sizes
-curl http://localhost:8000/feeds
-```
-
-**4. Slow Lookups**
-```bash
-# Check Redis latency
 docker-compose exec redis redis-cli --latency
-
-# Monitor metrics
 curl http://localhost:8000/metrics | grep ti_lookup_duration
 ```
 
-**5. Redis Memory Overcommit Warning**
-
-If you see this warning in Redis logs:
-```
-WARNING Memory overcommit must be enabled!
-```
-
-This is a Linux kernel setting. To fix it on the Docker host:
+**Redis Memory Overcommit Warning** - Fix on Docker host:
 ```bash
-# Temporary (until reboot)
 sudo sysctl vm.overcommit_memory=1
-
-# Permanent (add to sysctl.conf)
-echo 'vm.overcommit_memory = 1' | sudo tee -a /etc/sysctl.conf
-sudo sysctl -p
 ```
 
-> **Note:** This warning doesn't prevent Redis from working, but enabling overcommit prevents potential background save failures under low memory conditions.
+</details>
 
-### Performance Tuning
+<details>
+<summary><strong>Performance Tuning</strong></summary>
 
-**Redis Configuration:**
-- Increase `maxmemory` for large feeds
-- Enable RDB snapshots for persistence
-- Consider Redis clustering for scale
+**Redis:** Increase `maxmemory` for large feeds, enable RDB snapshots.
 
-**API Configuration:**
-- Adjust `reload_interval_minutes` for feed freshness vs. load
-- Tune `download_timeout_seconds` for slow feeds
-- Scale API containers horizontally
+**API:** Adjust `reload_interval_minutes`, tune `download_timeout_seconds`, scale containers horizontally. The API runs with 4 gunicorn workers by default for improved throughput.
+
+</details>
 
 ## Security Considerations
 
@@ -524,6 +467,13 @@ sudo sysctl -p
 - Monitor for feed URL changes/hijacking
 
 ## Changelog
+
+<details>
+<summary><strong>v1.2.0 (2025-12-04)</strong> - Click to expand</summary>
+
+- **Gunicorn with 4 workers** for improved API throughput and concurrency
+
+</details>
 
 <details>
 <summary><strong>v1.1.0 (2025-12-04)</strong> - Click to expand</summary>

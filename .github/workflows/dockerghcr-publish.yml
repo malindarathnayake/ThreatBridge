@@ -6,9 +6,19 @@ on:
       - main
     tags:
       - 'v*'
+    paths:
+      - 'source/**'
+      - 'Dockerfile.api'
+      - 'Dockerfile.loader'
+      - 'requirements.txt'
   pull_request:
     branches:
       - main
+    paths:
+      - 'source/**'
+      - 'Dockerfile.api'
+      - 'Dockerfile.loader'
+      - 'requirements.txt'
   workflow_dispatch:
 
 env:
