@@ -525,38 +525,30 @@ sudo sysctl -p
 
 ## Changelog
 
-### v1.1.0 (2025-12-04)
+<details>
+<summary><strong>v1.1.0 (2025-12-04)</strong> - Click to expand</summary>
 
-**New Features:**
-- **Per-feed refresh intervals**: Each feed can now have its own `refresh_minutes` setting to override the global `reload_interval_minutes`. Useful for feeds that don't update frequently.
-- **Large feed warnings**: UI shows warning for feeds with > 1M entries and asks for confirmation before refresh.
-- **Background refresh progress**: UI shows elapsed time during refresh and polls for completion.
-- **Configurable loader interval**: `LOADER_CHECK_INTERVAL` environment variable to control how often the loader checks for feeds due for refresh.
+- Per-feed refresh intervals (`refresh_minutes` config option)
+- Large feed warnings in UI (> 1M entries)
+- Background refresh progress tracking
+- Redis client resilience improvements
+- Batched Redis writes for large feeds
+- Fixed HTTP status codes on refresh endpoint
 
-**Improvements:**
-- **Redis client resilience**: Handles `BusyLoadingError` gracefully - waits for Redis to finish loading RDB instead of crashing.
-- **Increased Redis timeouts**: `socket_timeout` increased to 60s, `socket_connect_timeout` to 30s for large datasets.
-- **Batched Redis writes**: Large SADD operations now write in batches of 5000 to avoid timeouts.
-- **API port documentation**: Added clear instructions for changing the API listening port.
+</details>
 
-**Bug Fixes:**
-- Removed obsolete `version` attribute from docker-compose files (Docker Compose v2+ warning).
-- Fixed refresh endpoint returning wrong HTTP status codes (now properly returns 202 Accepted and 429 Too Many Requests).
+<details>
+<summary><strong>v1.0.0 (Initial Release)</strong> - Click to expand</summary>
 
-**Documentation:**
-- Added troubleshooting for Redis memory overcommit warning (`vm.overcommit_memory`).
-- Added `LOADER_CHECK_INTERVAL` to environment variables table.
-- Documented `refresh_minutes` per-feed configuration option.
-
-### v1.0.0 (Initial Release)
-
-- Core threat intelligence API with IP and domain lookups
+- Core threat intelligence API with IP/domain lookups
 - Redis-backed storage with PSL-aware domain matching
-- CIDR expansion support
 - Management UI dashboard
 - Prometheus metrics endpoint
 - Automatic feed refresh scheduling
-- Rate-limited manual refresh API
+
+</details>
+
+📋 **[Full Changelog](CHANGELOG.md)** - Complete release history with all details.
 
 ## License
 
