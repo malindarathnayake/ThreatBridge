@@ -53,6 +53,8 @@ services:
       start_period: 10s
 
   # Feed loader - automatically refreshes threat feeds
+  # Set LOADER_CHECK_INTERVAL to change how often (in seconds) the loader checks for feeds due for refresh
+  # Per-feed intervals are configured in feeds.yml via refresh_minutes (defaults to reload_interval_minutes)
   threatbridge-loader:
     image: ghcr.io/malindarathnayake/threatbridge-loader:latest
     container_name: threatbridge-loader
@@ -65,6 +67,7 @@ services:
       - FEEDS_CONFIG=/config/feeds.yml
       - MALWAREURL_FEED_URL=${MALWAREURL_FEED_URL:-}
       - PROOFPOINT_FEED_URL=${PROOFPOINT_FEED_URL:-}
+      - LOADER_CHECK_INTERVAL=${LOADER_CHECK_INTERVAL:-3600}
     volumes:
       - ./feeds.yml:/config/feeds.yml:ro
       - ./.env:/app/.env:ro
@@ -73,14 +76,14 @@ services:
         condition: service_healthy
     networks:
       - threatbridge-network
-    # Schedule feed updates every hour
+    # Check for feeds due for refresh (per-feed intervals in feeds.yml)
     command: >
       sh -c "
       while true; do
-        echo \"[$(date)] Starting feed reload...\"
+        echo \"[$(date)] Checking feeds for refresh...\"
         python -c 'import asyncio; from src.loader import load_all_feeds; asyncio.run(load_all_feeds())'
-        echo \"[$(date)] Feed reload complete. Sleeping for 1 hour...\"
-        sleep 3600
+        echo \"[$(date)] Feed check complete. Sleeping for $${LOADER_CHECK_INTERVAL:-3600}s...\"
+        sleep $${LOADER_CHECK_INTERVAL:-3600}
       done
       "
 

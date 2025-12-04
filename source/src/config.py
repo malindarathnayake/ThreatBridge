@@ -19,6 +19,7 @@ class FeedConfig(BaseModel):
     url: str = Field(..., description="Feed URL (may contain env var references)")
     risk: str = Field(..., pattern="^(high|medium|low)$", description="Risk level")
     enabled: bool = Field(default=True, description="Whether feed is active")
+    refresh_minutes: Optional[int] = Field(default=None, gt=0, description="Per-feed refresh interval (overrides global)")
     
     def get_resolved_url(self) -> str:
         """Resolve environment variable references in URL."""

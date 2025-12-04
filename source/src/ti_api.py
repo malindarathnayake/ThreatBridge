@@ -369,11 +369,14 @@ async def refresh_feed(feed_name: str, request: Request):
     rate_limit_ttl = redis_client.check_refresh_rate_limit(feed_name)
     if rate_limit_ttl:
         metrics_collector.record_refresh_request(feed_name, "rate_limited")
-        return RateLimitedResponse(
-            error="rate_limited",
-            message="Refresh allowed once per 15 minutes",
-            retry_after_seconds=rate_limit_ttl
-        ), status.HTTP_429_TOO_MANY_REQUESTS
+        return JSONResponse(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            content={
+                "error": "rate_limited",
+                "message": "Refresh allowed once per 15 minutes",
+                "retry_after_seconds": rate_limit_ttl
+            }
+        )
     
     # Set rate limit
     redis_client.set_refresh_rate_limit(feed_name, 900)  # 15 minutes
@@ -383,10 +386,13 @@ async def refresh_feed(feed_name: str, request: Request):
     
     metrics_collector.record_refresh_request(feed_name, "accepted")
     
-    return RefreshResponse(
-        status="accepted",
-        message=f"Refresh started for feed: {feed_name}"
-    ), status.HTTP_202_ACCEPTED
+    return JSONResponse(
+        status_code=status.HTTP_202_ACCEPTED,
+        content={
+            "status": "accepted",
+            "message": f"Refresh started for feed: {feed_name}"
+        }
+    )
 
 
 async def refresh_feed_task(feed_name: str):

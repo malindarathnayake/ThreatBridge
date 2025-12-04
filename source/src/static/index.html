@@ -371,6 +371,9 @@
                 
             const totalEntries = (feed.entry_count_ips || 0) + (feed.entry_count_domains || 0);
             
+            // Check if this is a large feed (> 1 million entries)
+            const isLargeFeed = totalEntries > 1000000;
+            
             // Build status/error message
             let statusMessage = '';
             if (!feed.enabled) {
@@ -388,6 +391,13 @@
                     </div>`;
             }
             
+            // Large feed warning message
+            const largeFeedWarning = isLargeFeed ? `
+                <div style="background: #e3f2fd; border-left: 3px solid #2196f3; padding: 8px 12px; margin: 10px 0; font-size: 0.85em; color: #1565c0;">
+                    <strong>📊 Large Feed</strong> - ${totalEntries.toLocaleString()} entries. Refresh may take several minutes.
+                </div>
+            ` : '';
+            
             return `
                 <div class="feed-card">
                     <h3>
@@ -398,6 +408,7 @@
                     <div class="feed-description">${escapeHtml(feed.description)}</div>
                     
                     ${statusMessage}
+                    ${largeFeedWarning}
                     
                     <div class="feed-stats">
                         <div class="stat-item">
@@ -438,13 +449,36 @@
         }
 
         async function refreshFeed(feedName) {
+            // Find the feed data to check entry count
+            const feed = feedsData.find(f => f.name === feedName);
+            const totalEntries = feed ? (feed.entry_count_ips || 0) + (feed.entry_count_domains || 0) : 0;
+            
+            // Show warning for large feeds (> 1 million entries)
+            if (totalEntries > 1000000) {
+                const confirmed = confirm(
+                    `⚠️ WARNING: Large Feed\n\n` +
+                    `This feed contains ${totalEntries.toLocaleString()} entries.\n\n` +
+                    `Refreshing may take several minutes and the dashboard will continue to work normally.\n\n` +
+                    `The refresh runs in the background - you can close this page and check back later.\n\n` +
+                    `Do you want to proceed?`
+                );
+                
+                if (!confirmed) {
+                    return;
+                }
+            }
+            
+            await doRefreshFeed(feedName);
+        }
+        
+        async function doRefreshFeed(feedName) {
             const btn = document.getElementById(`refresh-btn-${feedName}`);
             const status = document.getElementById(`refresh-status-${feedName}`);
             
             try {
                 btn.disabled = true;
                 btn.textContent = 'Refreshing...';
-                status.innerHTML = '<span style="color: #3498db;">Refresh started...</span>';
+                status.innerHTML = '<span style="color: #3498db;">🔄 Refresh started (runs in background)...</span>';
                 
                 const response = await fetch(`/feeds/${feedName}/refresh`, {
                     method: 'POST'
@@ -456,11 +490,11 @@
                     status.innerHTML = `<span style="color: #e67e22;">Rate limited. Try again in <span id="countdown-${feedName}" class="countdown">${errorData.retry_after_seconds}s</span></span>`;
                 } else if (response.status === 202) {
                     const result = await response.json();
-                    status.innerHTML = '<span style="color: #27ae60;">Refresh accepted</span>';
+                    status.innerHTML = '<span style="color: #27ae60;">✓ Refresh accepted - running in background</span>';
                     startRefreshCountdown(feedName, 900); // 15 minutes
                     
-                    // Refresh dashboard after 5 seconds to show updated data
-                    setTimeout(refreshAllData, 5000);
+                    // Start polling for completion
+                    pollFeedRefreshStatus(feedName);
                 } else {
                     throw new Error(`Unexpected response: ${response.status}`);
                 }
@@ -471,6 +505,45 @@
                 btn.disabled = false;
                 btn.textContent = 'Refresh Feed';
             }
+        }
+        
+        // Poll for feed refresh completion
+        function pollFeedRefreshStatus(feedName) {
+            let pollCount = 0;
+            const maxPolls = 60; // Poll for up to 5 minutes (every 5 seconds)
+            const status = document.getElementById(`refresh-status-${feedName}`);
+            
+            // Get initial last_loaded time
+            const feed = feedsData.find(f => f.name === feedName);
+            const initialLastLoaded = feed ? feed.last_loaded : null;
+            
+            const pollInterval = setInterval(async () => {
+                pollCount++;
+                
+                try {
+                    const feedResponse = await fetchApi(`/feeds/${feedName}`);
+                    
+                    // Check if last_loaded has changed
+                    if (feedResponse.last_loaded && feedResponse.last_loaded !== initialLastLoaded) {
+                        clearInterval(pollInterval);
+                        status.innerHTML = '<span style="color: #27ae60;">✓ Refresh complete!</span>';
+                        refreshAllData(); // Update the dashboard
+                        return;
+                    }
+                    
+                    // Update status with elapsed time
+                    const elapsed = pollCount * 5;
+                    status.innerHTML = `<span style="color: #3498db;">🔄 Refreshing... (${elapsed}s elapsed)</span>`;
+                    
+                } catch (error) {
+                    console.error('Poll error:', error);
+                }
+                
+                if (pollCount >= maxPolls) {
+                    clearInterval(pollInterval);
+                    status.innerHTML = '<span style="color: #e67e22;">⏳ Still refreshing in background. Check back later.</span>';
+                }
+            }, 5000);
         }
 
         function startRefreshCountdown(feedName, seconds) {

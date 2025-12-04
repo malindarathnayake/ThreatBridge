@@ -222,13 +222,16 @@ feeds:
     url: "from env var: MY_FEED_URL"  # Or direct URL
     risk: high                        # high | medium | low
     enabled: true
+    refresh_minutes: 300              # Optional: per-feed refresh interval (overrides global)
 
 settings:
-  reload_interval_minutes: 60    # How often to reload feeds
+  reload_interval_minutes: 60    # Default refresh interval for all feeds
   download_timeout_seconds: 300  # HTTP timeout for downloads
   max_entry_length: 253          # Max DNS name length
   min_cidr_prefix: 20            # Min CIDR to expand (/20=4096 IPs max)
 ```
+
+> **Per-Feed Refresh Intervals:** Each feed can have its own `refresh_minutes` setting to override the global `reload_interval_minutes`. This is useful for feeds that don't update frequently - set a longer interval (e.g., `300` for 5 hours) to reduce unnecessary downloads.
 
 > **CIDR Expansion**: Feeds with CIDR notation (e.g., `1.2.3.0/24`) are automatically expanded. The `min_cidr_prefix` setting limits expansion to prevent memory issues (default `/20` = max 4096 IPs per CIDR).
 
@@ -244,6 +247,7 @@ settings:
 | `FEEDS_CONFIG` | /config/feeds.yml | Feed configuration path |
 | `MALWAREURL_FEED_URL` | - | MalwareURL feed URL (required) |
 | `PROOFPOINT_FEED_URL` | - | Proofpoint feed URL (optional) |
+| `LOADER_CHECK_INTERVAL` | 3600 | How often (seconds) the loader checks for feeds due for refresh |
 
 > **Changing the API Port:** To expose the API on a different host port (e.g., 9000), set `API_PORT=9000` in your `.env` file or pass it when starting Docker Compose:
 > ```bash
@@ -383,18 +387,18 @@ end
 ### Local Development
 
 ```bash
-# Install dependencies
-pip install -r requirements.txt
+# Build docker-compose from root
+docker-compose build threatbridge
 
-# Set environment variables
-export REDIS_HOST=localhost
-export MALWAREURL_FEED_URL=your-url
+# run compose file allows you to see the logs of the running containers for debugging
+docker-compose up 
 
-# Run Redis (if not using Docker)
-redis-server
+#Oneliner to build and run
+docker compose up -d --build threatbridge
 
-# Run API server
-uvicorn src.ti_api:app --reload --host 0.0.0.0 --port 8000
+# Check logs 
+docker compose logs threatbridge
+
 ```
 
 ### Testing
@@ -518,6 +522,41 @@ sudo sysctl -p
 - Feed URLs are sensitive - use environment variables
 - Consider reverse proxy with HTTPS for external access
 - Monitor for feed URL changes/hijacking
+
+## Changelog
+
+### v1.1.0 (2025-12-04)
+
+**New Features:**
+- **Per-feed refresh intervals**: Each feed can now have its own `refresh_minutes` setting to override the global `reload_interval_minutes`. Useful for feeds that don't update frequently.
+- **Large feed warnings**: UI shows warning for feeds with > 1M entries and asks for confirmation before refresh.
+- **Background refresh progress**: UI shows elapsed time during refresh and polls for completion.
+- **Configurable loader interval**: `LOADER_CHECK_INTERVAL` environment variable to control how often the loader checks for feeds due for refresh.
+
+**Improvements:**
+- **Redis client resilience**: Handles `BusyLoadingError` gracefully - waits for Redis to finish loading RDB instead of crashing.
+- **Increased Redis timeouts**: `socket_timeout` increased to 60s, `socket_connect_timeout` to 30s for large datasets.
+- **Batched Redis writes**: Large SADD operations now write in batches of 5000 to avoid timeouts.
+- **API port documentation**: Added clear instructions for changing the API listening port.
+
+**Bug Fixes:**
+- Removed obsolete `version` attribute from docker-compose files (Docker Compose v2+ warning).
+- Fixed refresh endpoint returning wrong HTTP status codes (now properly returns 202 Accepted and 429 Too Many Requests).
+
+**Documentation:**
+- Added troubleshooting for Redis memory overcommit warning (`vm.overcommit_memory`).
+- Added `LOADER_CHECK_INTERVAL` to environment variables table.
+- Documented `refresh_minutes` per-feed configuration option.
+
+### v1.0.0 (Initial Release)
+
+- Core threat intelligence API with IP and domain lookups
+- Redis-backed storage with PSL-aware domain matching
+- CIDR expansion support
+- Management UI dashboard
+- Prometheus metrics endpoint
+- Automatic feed refresh scheduling
+- Rate-limited manual refresh API
 
 ## License
 
