@@ -245,6 +245,12 @@ settings:
 | `MALWAREURL_FEED_URL` | - | MalwareURL feed URL (required) |
 | `PROOFPOINT_FEED_URL` | - | Proofpoint feed URL (optional) |
 
+> **Changing the API Port:** To expose the API on a different host port (e.g., 9000), set `API_PORT=9000` in your `.env` file or pass it when starting Docker Compose:
+> ```bash
+> API_PORT=9000 docker-compose up -d
+> ```
+> The API will then be accessible at `http://localhost:9000`. The container internally still listens on port 8000.
+
 ## Domain Matching Logic
 
 The API implements PSL-aware domain matching:

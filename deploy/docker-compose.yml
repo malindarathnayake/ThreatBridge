@@ -9,6 +9,8 @@ services:
     container_name: threatbridge
     restart: unless-stopped
     ports:
+      # To change the API port: set API_PORT in .env, run API_PORT=9000 docker-compose up -d,
+      # or edit the port below directly (e.g., "9000:8000") to make it permanent
       - "${API_PORT:-8000}:8000"
     environment:
       - REDIS_HOST=redis
