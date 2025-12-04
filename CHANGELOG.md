@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.2.0] - 2025-12-04
 
+### Added
+- **IPInfo enrichment for Quick Lookup**: Web UI now shows ASN, organization, country, and continent data for IP lookups via [IPInfo Lite API](https://ipinfo.io/developers/lite). Configure via `ipinfo_token` in `feeds.yml` or `IPINFO_TOKEN` env var. Does not affect Graylog API lookups.
+
 ### Changed
 - **Gunicorn with 4 workers**: Switched from single-process uvicorn to gunicorn with 4 uvicorn workers for improved API throughput and concurrency.
 

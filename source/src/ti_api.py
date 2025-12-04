@@ -11,6 +11,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
+import httpx
 
 from .config import app_config
 from .loader import load_all_feeds, load_single_feed
@@ -417,6 +418,59 @@ async def prometheus_metrics():
         content=get_metrics_content(),
         media_type=get_metrics_content_type()
     )
+
+
+# IPInfo enrichment endpoint (web UI only - does not affect Graylog lookups)
+@app.get("/ui/enrich/ip")
+async def enrich_ip(ip: str):
+    """
+    Enrich IP with geolocation/ASN data from IPInfo.
+    Web UI only - does not affect Graylog lookups.
+    """
+    if not app_config.ipinfo_token:
+        # Return empty response - enrichment not configured (not an error)
+        return {"configured": False}
+    
+    # Validate IP format
+    normalized_ip = psl_classifier.normalize_entry(ip)
+    if not psl_classifier.is_ip_address(normalized_ip):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid IP address format: {ip}"
+        )
+    
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.get(
+                f"https://api.ipinfo.io/lite/{normalized_ip}",
+                params={"token": app_config.ipinfo_token}
+            )
+            
+            if response.status_code == 200:
+                return response.json()
+            elif response.status_code == 429:
+                return JSONResponse(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    content={"error": "rate_limited", "message": "IPInfo rate limit exceeded"}
+                )
+            else:
+                logger.warning(f"IPInfo returned {response.status_code} for {ip}")
+                return JSONResponse(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    content={"error": "ipinfo_error", "message": "Failed to fetch IPInfo data"}
+                )
+                
+    except httpx.TimeoutException:
+        return JSONResponse(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            content={"error": "timeout", "message": "IPInfo request timed out"}
+        )
+    except Exception as e:
+        logger.error(f"IPInfo enrichment error for {ip}: {e}")
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"error": "internal_error", "message": "Failed to enrich IP"}
+        )
 
 
 # Static files and UI

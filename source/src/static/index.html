@@ -604,15 +604,20 @@
                 const endpoint = isIP ? `/check/ip?ip=${encodeURIComponent(query)}` : 
                                        `/check/domain?domain=${encodeURIComponent(query)}`;
                 
-                const result = await fetchApi(endpoint);
-                displayLookupResult(result);
+                // Fetch TI result and IPInfo enrichment in parallel for IPs
+                const [result, ipInfo] = await Promise.all([
+                    fetchApi(endpoint),
+                    isIP ? fetchApi(`/ui/enrich/ip?ip=${encodeURIComponent(query)}`).catch(() => null) : Promise.resolve(null)
+                ]);
+                
+                displayLookupResult(result, ipInfo);
                 
             } catch (error) {
                 showLookupResult(`Lookup failed: ${error.message}`, 'error');
             }
         }
 
-        function displayLookupResult(result) {
+        function displayLookupResult(result, ipInfo = null) {
             let message = `Query: ${result.query}\nType: ${result.type}\nFound: ${result.found ? 'YES' : 'NO'}`;
             
             if (result.found) {
@@ -626,6 +631,18 @@
                 if (result.matched_value) {
                     message += `\nMatched Value: ${result.matched_value}`;
                 }
+            }
+            
+            // Add IPInfo enrichment data if available and configured
+            if (ipInfo && ipInfo.configured !== false && !ipInfo.error) {
+                message += `\n\n--- IP Info ---`;
+                if (ipInfo.asn) message += `\nASN: ${ipInfo.asn}`;
+                if (ipInfo.as_name) message += `\nOrg: ${ipInfo.as_name}`;
+                if (ipInfo.as_domain) message += `\nDomain: ${ipInfo.as_domain}`;
+                if (ipInfo.country) message += `\nCountry: ${ipInfo.country} (${ipInfo.country_code})`;
+                if (ipInfo.continent) message += `\nContinent: ${ipInfo.continent}`;
+            } else if (ipInfo && ipInfo.configured === false) {
+                message += `\n\n(IPInfo enrichment: not configured)`;
             }
             
             const resultClass = result.found ? 'result-found' : 'result-not-found';

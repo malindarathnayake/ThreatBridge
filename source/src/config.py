@@ -46,6 +46,7 @@ class SettingsConfig(BaseModel):
     download_timeout_seconds: int = Field(default=300, gt=0, description="HTTP download timeout")
     max_entry_length: int = Field(default=253, gt=0, description="Maximum entry length (DNS limit)")
     min_cidr_prefix: int = Field(default=20, ge=8, le=32, description="Min CIDR prefix to expand (/20=4096 IPs max)")
+    ipinfo_token: Optional[str] = Field(default=None, description="IPInfo API token for web UI enrichment")
 
 
 class Config(BaseModel):
@@ -82,6 +83,9 @@ class AppConfig:
         # Load feeds configuration
         self._config: Optional[Config] = None
         self.load_feeds_config()
+        
+        # IPInfo API for web UI enrichment (env var overrides yaml setting)
+        self.ipinfo_token = os.getenv("IPINFO_TOKEN") or self.config.settings.ipinfo_token or ""
     
     def load_feeds_config(self) -> None:
         """Load and validate feeds configuration from YAML."""

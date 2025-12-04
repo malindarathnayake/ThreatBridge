@@ -94,6 +94,21 @@ curl "http://localhost:8000/check/ip?ip=1.2.3.4"
 - Management UI at http://localhost:8000
 - Two free threat feeds enabled by default (Emerging Threats, CINS Army)
 
+### Upgrading
+
+```bash
+# Pull latest images
+docker compose pull
+
+# Recreate containers with new images
+docker compose up -d
+
+# Or if already running, just restart
+docker compose restart
+```
+
+> **Note:** Check the [CHANGELOG](CHANGELOG.md) for new versions - `feeds.sample.yml` may have new options or feeds added that you'll want to merge into your `feeds.yml`.
+
 ---
 
 ## Development Setup (Build from Source)
@@ -252,11 +267,32 @@ settings:
 | `MALWAREURL_FEED_URL` | - | MalwareURL feed URL (required) |
 | `PROOFPOINT_FEED_URL` | - | Proofpoint feed URL (optional) |
 | `LOADER_CHECK_INTERVAL` | 3600 | How often (seconds) the loader checks for feeds due for refresh |
+| `IPINFO_TOKEN` | - | IPInfo API token for IP enrichment in web UI (optional) |
 
 **Changing the API Port:**
 ```bash
 API_PORT=9000 docker-compose up -d
 ```
+
+**IPInfo Enrichment (Web UI Only):**
+
+The Quick Lookup in the web UI can show ASN, organization, and geolocation data for IP addresses using [IPInfo Lite API](https://ipinfo.io/developers/lite).
+
+1. Get a free token at https://ipinfo.io/signup (50K requests/month free)
+2. Configure in `feeds.yml` (recommended) or via environment variable:
+
+```yaml
+# In feeds.yml - add to settings section:
+settings:
+  ipinfo_token: "your_token_here"
+```
+
+```bash
+# Or via environment variable (overrides feeds.yml):
+IPINFO_TOKEN=your_token_here docker-compose up -d
+```
+
+> **Note:** This only affects the web UI Quick Lookup. The main `/check/ip` API used by Graylog is unchanged.
 
 </details>
 
