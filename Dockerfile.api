@@ -45,5 +45,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 # Expose port
 EXPOSE 8000
 
-# Command to run the application
-CMD ["python", "-m", "uvicorn", "src.ti_api:app", "--host", "0.0.0.0", "--port", "8000"]
+# Command to run the application with gunicorn + uvicorn workers for better throughput
+CMD ["gunicorn", "src.ti_api:app", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", "-b", "0.0.0.0:8000"]
