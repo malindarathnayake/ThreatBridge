@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import os
 import time
 from datetime import datetime
 from typing import Dict, List, Optional
@@ -563,13 +564,17 @@ async def startup_event():
     # Start background scheduler
     start_scheduler()
     
-    # Load feeds on startup (optional - could be disabled for faster startup)
-    logger.info("Loading feeds on startup...")
-    try:
-        await scheduled_feed_load()
-    except Exception as e:
-        logger.error(f"Failed to load feeds on startup: {e}")
-        # Continue anyway - feeds will be loaded by scheduler
+    # Load feeds on startup (skip if dedicated loader container handles this)
+    skip_startup_load = os.environ.get("SKIP_STARTUP_LOAD", "").lower() in ("1", "true", "yes")
+    if skip_startup_load:
+        logger.info("Skipping startup feed load (SKIP_STARTUP_LOAD=true, loader container handles feeds)")
+    else:
+        logger.info("Loading feeds on startup...")
+        try:
+            await scheduled_feed_load()
+        except Exception as e:
+            logger.error(f"Failed to load feeds on startup: {e}")
+            # Continue anyway - feeds will be loaded by scheduler
     
     logger.info("ThreatBridge startup complete")
 
