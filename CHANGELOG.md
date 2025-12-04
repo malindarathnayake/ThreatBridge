@@ -5,6 +5,20 @@ All notable changes to ThreatBridge will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.1] - 2025-12-04
+
+### Added
+- **SKIP_STARTUP_LOAD option**: New environment variable to skip feed loading on API startup when a dedicated loader container handles feeds. Prevents race conditions with multiple gunicorn workers.
+
+### Changed
+- **Gunicorn timeout increased**: Raised worker timeout from 30s to 120s to prevent worker kills during slow feed processing.
+- **Gunicorn preload mode**: Added `--preload` flag to load app once before forking workers, reducing memory usage and preventing startup race conditions.
+- **Healthcheck start period**: Increased from 40s to 60s to accommodate slower startups.
+
+### Fixed
+- **Worker timeout on startup**: Fixed issue where gunicorn workers were killed (SIGKILL) during initial feed load due to 30s timeout being exceeded by large feed processing (~27s for proofpoint_block_ips).
+- **Race condition on startup**: Fixed multiple workers racing to load the same feeds simultaneously when using gunicorn with multiple workers.
+
 ## [1.2.0] - 2025-12-04
 
 ### Added
