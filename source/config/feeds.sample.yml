@@ -47,11 +47,12 @@
 # =============================================================================
 
 feeds:
+
   - name: proofpoint_compromised_ips
     description: "Proofpoint Emerging Threats compromised IPs- List of known compromised hosts. Aggressive but reliable. Good for blocking inbound scans/exploits."
     url: "http://rules.emergingthreats.net/blockrules/compromised-ips.txt"
     risk: high
-    enabled: false
+    enabled: true
 
   - name: proofpoint_block_ips
     description: "Emerging Threats Block IPs - Wider rulesets often used in Snort/Suricata but they publish IP lists suitable for firewalls."
@@ -64,6 +65,7 @@ feeds:
     url: "http://cinsscore.com/list/ci-badguys.txt"
     risk: high
     enabled: true
+    refresh_minutes: 300  # Refresh every 5 hours (overrides global reload_interval_minutes)
 
   # -------------------------------------------------------------------------
   # ADD YOUR CUSTOM FEEDS BELOW THIS LINE
@@ -79,4 +81,3 @@ settings:
   download_timeout_seconds: 300
   max_entry_length: 253  # max DNS name length
   min_cidr_prefix: 20    # min CIDR prefix to expand (/20=4096 IPs, /24=254 IPs, /16=65K IPs)
-

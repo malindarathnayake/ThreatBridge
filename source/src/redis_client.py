@@ -6,7 +6,7 @@ from typing import Dict, List, Optional, Set, Union
 
 import redis
 from redis.connection import ConnectionPool
-from redis.exceptions import ConnectionError, RedisError
+from redis.exceptions import BusyLoadingError, ConnectionError, RedisError
 
 from .config import app_config
 
@@ -15,6 +15,9 @@ logger = logging.getLogger(__name__)
 
 class RedisClient:
     """Redis client with retry logic and helper methods for TI operations."""
+    
+    # Batch size for SADD operations to avoid massive single commands
+    SADD_BATCH_SIZE = 5000
     
     def __init__(self):
         self._pool: Optional[ConnectionPool] = None
@@ -29,21 +32,39 @@ class RedisClient:
                 port=app_config.redis_port,
                 db=app_config.redis_db,
                 decode_responses=True,
-                socket_connect_timeout=5,
-                socket_timeout=5,
+                socket_connect_timeout=30,
+                socket_timeout=60,
                 retry_on_timeout=True,
                 health_check_interval=30,
                 max_connections=20
             )
             self._redis = redis.Redis(connection_pool=self._pool)
             
-            # Test connection
-            self._redis.ping()
+            # Wait for Redis to be ready (handles BusyLoadingError during RDB load)
+            self._wait_for_redis_ready()
             logger.info(f"Connected to Redis at {app_config.redis_host}:{app_config.redis_port}")
             
         except Exception as e:
             logger.error(f"Failed to connect to Redis: {e}")
             raise
+    
+    def _wait_for_redis_ready(self, max_wait_seconds: int = 120) -> None:
+        """Wait for Redis to finish loading and be ready to accept commands."""
+        start_time = time.time()
+        wait_interval = 2.0
+        
+        while True:
+            try:
+                self._redis.ping()
+                return  # Redis is ready
+            except BusyLoadingError:
+                elapsed = time.time() - start_time
+                if elapsed >= max_wait_seconds:
+                    raise TimeoutError(f"Redis still loading after {max_wait_seconds}s")
+                logger.info(f"Redis is loading dataset, waiting... ({elapsed:.0f}s elapsed)")
+                time.sleep(wait_interval)
+            except Exception:
+                raise  # Other errors should propagate immediately
     
     def is_connected(self) -> bool:
         """Check if Redis connection is healthy."""
@@ -77,6 +98,12 @@ class RedisClient:
                     self._connect()
                 return operation(*args, **kwargs)
                 
+            except BusyLoadingError:
+                logger.warning(f"Redis is loading dataset (attempt {attempt + 1}), waiting...")
+                if attempt < max_retries - 1:
+                    time.sleep(retry_delay * (2 ** attempt))
+                else:
+                    raise
             except ConnectionError as e:
                 logger.warning(f"Redis connection error (attempt {attempt + 1}): {e}")
                 if attempt < max_retries - 1:
@@ -178,29 +205,35 @@ class RedisClient:
         key = f"ti:feed:{feed_name}:domains:walkable"
         return self.smembers(key)
     
+    def _batched_sadd(self, key: str, values: List[str]) -> int:
+        """Add values to a set in batches to avoid massive single SADD commands."""
+        if not values:
+            return 0
+        
+        total_added = 0
+        for i in range(0, len(values), self.SADD_BATCH_SIZE):
+            batch = values[i:i + self.SADD_BATCH_SIZE]
+            total_added += self.sadd(key, *batch)
+        
+        return total_added
+    
     def add_feed_ips(self, feed_name: str, ips: List[str], staging: bool = False) -> int:
-        """Add IPs to feed set."""
+        """Add IPs to feed set in batches."""
         suffix = ":new" if staging else ""
         key = f"ti:feed:{feed_name}:ips{suffix}"
-        if ips:
-            return self.sadd(key, *ips)
-        return 0
+        return self._batched_sadd(key, ips)
     
     def add_feed_domains(self, feed_name: str, domains: List[str], staging: bool = False) -> int:
-        """Add domains to feed set."""
+        """Add domains to feed set in batches."""
         suffix = ":new" if staging else ""
         key = f"ti:feed:{feed_name}:domains{suffix}"
-        if domains:
-            return self.sadd(key, *domains)
-        return 0
+        return self._batched_sadd(key, domains)
     
     def add_feed_walkable_domains(self, feed_name: str, domains: List[str], staging: bool = False) -> int:
-        """Add walkable domains to feed set."""
+        """Add walkable domains to feed set in batches."""
         suffix = ":new" if staging else ""
         key = f"ti:feed:{feed_name}:domains:walkable{suffix}"
-        if domains:
-            return self.sadd(key, *domains)
-        return 0
+        return self._batched_sadd(key, domains)
     
     def swap_staging_to_live(self, feed_name: str) -> None:
         """Atomically swap staging keys to live keys."""

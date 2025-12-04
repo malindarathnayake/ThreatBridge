@@ -3,7 +3,7 @@
 import hashlib
 import logging
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Set, Tuple
 
 import httpx
@@ -421,26 +421,79 @@ class FeedLoader:
             
             return FeedLoadResult(False, error_msg)
     
-    async def load_all_feeds(self, rebuild_global_sets: bool = True) -> Dict[str, FeedLoadResult]:
+    def is_feed_due_for_refresh(self, feed_config: FeedConfig) -> bool:
         """
-        Load all enabled feeds.
+        Check if a feed is due for refresh based on its interval.
+        
+        Args:
+            feed_config: Feed configuration
+        
+        Returns:
+            True if feed should be refreshed, False otherwise
+        """
+        # Get effective interval (per-feed or global default)
+        interval_minutes = feed_config.refresh_minutes or app_config.config.settings.reload_interval_minutes
+        
+        # Get last loaded time from metadata
+        metadata = redis_client.get_feed_metadata(feed_config.name)
+        if not metadata:
+            # Never loaded, so it's due
+            logger.debug(f"Feed '{feed_config.name}' has no metadata, marking as due for refresh")
+            return True
+        
+        last_loaded_str = metadata.get('last_loaded')
+        if not last_loaded_str:
+            logger.debug(f"Feed '{feed_config.name}' has no last_loaded timestamp, marking as due for refresh")
+            return True
+        
+        try:
+            last_loaded = datetime.fromisoformat(last_loaded_str)
+            next_due = last_loaded + timedelta(minutes=interval_minutes)
+            now = datetime.utcnow()
+            
+            if now >= next_due:
+                logger.debug(f"Feed '{feed_config.name}' is due for refresh (last: {last_loaded_str}, interval: {interval_minutes}m)")
+                return True
+            else:
+                remaining = (next_due - now).total_seconds() / 60
+                logger.debug(f"Feed '{feed_config.name}' not due for refresh ({remaining:.1f}m remaining)")
+                return False
+                
+        except (ValueError, TypeError) as e:
+            logger.warning(f"Could not parse last_loaded for feed '{feed_config.name}': {e}, marking as due")
+            return True
+
+    async def load_all_feeds(self, rebuild_global_sets: bool = True, force: bool = False) -> Dict[str, FeedLoadResult]:
+        """
+        Load all enabled feeds that are due for refresh.
         
         Args:
             rebuild_global_sets: Whether to rebuild global union sets after loading
+            force: If True, bypass interval check and load all feeds
         
         Returns:
             Dictionary of feed_name -> FeedLoadResult
         """
         results = {}
         enabled_feeds = app_config.enabled_feeds
+        feeds_loaded = 0
+        feeds_skipped = 0
         
-        logger.info(f"Loading {len(enabled_feeds)} enabled feeds")
+        logger.info(f"Checking {len(enabled_feeds)} enabled feeds for refresh (force={force})")
         
         for feed_config in enabled_feeds:
+            # Check if feed is due for refresh (unless force=True)
+            if not force and not self.is_feed_due_for_refresh(feed_config):
+                feeds_skipped += 1
+                continue
+            
             result = await self.load_feed(feed_config)
             results[feed_config.name] = result
+            feeds_loaded += 1
         
-        if rebuild_global_sets:
+        logger.info(f"Feed refresh complete: {feeds_loaded} loaded, {feeds_skipped} skipped (not due)")
+        
+        if rebuild_global_sets and feeds_loaded > 0:
             self.rebuild_global_sets()
         
         # Update Redis connection status metric

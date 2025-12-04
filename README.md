@@ -222,13 +222,16 @@ feeds:
     url: "from env var: MY_FEED_URL"  # Or direct URL
     risk: high                        # high | medium | low
     enabled: true
+    refresh_minutes: 300              # Optional: per-feed refresh interval (overrides global)
 
 settings:
-  reload_interval_minutes: 60    # How often to reload feeds
+  reload_interval_minutes: 60    # Default refresh interval for all feeds
   download_timeout_seconds: 300  # HTTP timeout for downloads
   max_entry_length: 253          # Max DNS name length
   min_cidr_prefix: 20            # Min CIDR to expand (/20=4096 IPs max)
 ```
+
+> **Per-Feed Refresh Intervals:** Each feed can have its own `refresh_minutes` setting to override the global `reload_interval_minutes`. This is useful for feeds that don't update frequently - set a longer interval (e.g., `300` for 5 hours) to reduce unnecessary downloads.
 
 > **CIDR Expansion**: Feeds with CIDR notation (e.g., `1.2.3.0/24`) are automatically expanded. The `min_cidr_prefix` setting limits expansion to prevent memory issues (default `/20` = max 4096 IPs per CIDR).
 
@@ -244,6 +247,7 @@ settings:
 | `FEEDS_CONFIG` | /config/feeds.yml | Feed configuration path |
 | `MALWAREURL_FEED_URL` | - | MalwareURL feed URL (required) |
 | `PROOFPOINT_FEED_URL` | - | Proofpoint feed URL (optional) |
+| `LOADER_CHECK_INTERVAL` | 3600 | How often (seconds) the loader checks for feeds due for refresh |
 
 > **Changing the API Port:** To expose the API on a different host port (e.g., 9000), set `API_PORT=9000` in your `.env` file or pass it when starting Docker Compose:
 > ```bash
@@ -383,18 +387,18 @@ end
 ### Local Development
 
 ```bash
-# Install dependencies
-pip install -r requirements.txt
+# Build docker-compose from root
+docker-compose build threatbridge
 
-# Set environment variables
-export REDIS_HOST=localhost
-export MALWAREURL_FEED_URL=your-url
+# run compose file allows you to see the logs of the running containers for debugging
+docker-compose up 
 
-# Run Redis (if not using Docker)
-redis-server
+#Oneliner to build and run
+docker compose up -d --build threatbridge
 
-# Run API server
-uvicorn src.ti_api:app --reload --host 0.0.0.0 --port 8000
+# Check logs 
+docker compose logs threatbridge
+
 ```
 
 ### Testing
@@ -518,6 +522,33 @@ sudo sysctl -p
 - Feed URLs are sensitive - use environment variables
 - Consider reverse proxy with HTTPS for external access
 - Monitor for feed URL changes/hijacking
+
+## Changelog
+
+<details>
+<summary><strong>v1.1.0 (2025-12-04)</strong> - Click to expand</summary>
+
+- Per-feed refresh intervals (`refresh_minutes` config option)
+- Large feed warnings in UI (> 1M entries)
+- Background refresh progress tracking
+- Redis client resilience improvements
+- Batched Redis writes for large feeds
+- Fixed HTTP status codes on refresh endpoint
+
+</details>
+
+<details>
+<summary><strong>v1.0.0 (Initial Release)</strong> - Click to expand</summary>
+
+- Core threat intelligence API with IP/domain lookups
+- Redis-backed storage with PSL-aware domain matching
+- Management UI dashboard
+- Prometheus metrics endpoint
+- Automatic feed refresh scheduling
+
+</details>
+
+📋 **[Full Changelog](CHANGELOG.md)** - Complete release history with all details.
 
 ## License
 
