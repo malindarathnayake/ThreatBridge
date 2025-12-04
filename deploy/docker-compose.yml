@@ -1,0 +1,93 @@
+# ThreatBridge - Simple Deployment
+# Download this file and feeds.sample.yml, then run: docker-compose up -d
+
+version: '3.8'
+
+services:
+  threatbridge:
+    image: ghcr.io/malindarathnayake/threatbridge-api:latest
+    container_name: threatbridge
+    restart: unless-stopped
+    ports:
+      - "${API_PORT:-8000}:8000"
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=0
+      - API_PORT=8000
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - FEEDS_CONFIG=/config/feeds.yml
+      - MALWAREURL_FEED_URL=${MALWAREURL_FEED_URL:-}
+      - PROOFPOINT_FEED_URL=${PROOFPOINT_FEED_URL:-}
+    volumes:
+      - ./feeds.yml:/config/feeds.yml:ro
+      - ./.env:/app/.env:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - threatbridge-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  redis:
+    image: redis:7-alpine
+    container_name: threatbridge-redis
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6379:6379"  # Only bind to localhost for security
+    command: redis-server --save 900 1 --save 300 10 --save 60 10000
+    volumes:
+      - redis-data:/data
+    networks:
+      - threatbridge-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # Feed loader - automatically refreshes threat feeds
+  threatbridge-loader:
+    image: ghcr.io/malindarathnayake/threatbridge-loader:latest
+    container_name: threatbridge-loader
+    restart: unless-stopped
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=0
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - FEEDS_CONFIG=/config/feeds.yml
+      - MALWAREURL_FEED_URL=${MALWAREURL_FEED_URL:-}
+      - PROOFPOINT_FEED_URL=${PROOFPOINT_FEED_URL:-}
+    volumes:
+      - ./feeds.yml:/config/feeds.yml:ro
+      - ./.env:/app/.env:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - threatbridge-network
+    # Schedule feed updates every hour
+    command: >
+      sh -c "
+      while true; do
+        echo \"[$(date)] Starting feed reload...\"
+        python -c 'import asyncio; from src.loader import load_all_feeds; asyncio.run(load_all_feeds())'
+        echo \"[$(date)] Feed reload complete. Sleeping for 1 hour...\"
+        sleep 3600
+      done
+      "
+
+volumes:
+  redis-data:
+    driver: local
+
+networks:
+  threatbridge-network:
+    driver: bridge

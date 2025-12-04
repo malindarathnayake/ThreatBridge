@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ThreatBridge - Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+            background-color: #f5f5f5;
+            color: #333;
+            line-height: 1.6;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .header {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .header h1 {
+            color: #2c3e50;
+            margin-bottom: 8px;
+        }
+        
+        .header p {
+            color: #7f8c8d;
+            margin: 0;
+        }
+        
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        
+        .status-healthy { background-color: #27ae60; }
+        .status-unhealthy { background-color: #e74c3c; }
+        .status-error { background-color: #f39c12; }
+        .status-unknown { background-color: #95a5a6; }
+        
+        .section {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .section h2 {
+            color: #2c3e50;
+            margin-bottom: 16px;
+            font-size: 1.25em;
+        }
+        
+        .lookup-form {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        
+        .lookup-form input {
+            flex: 1;
+            min-width: 200px;
+            padding: 10px 12px;
+            border: 2px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        
+        .lookup-form input:focus {
+            border-color: #3498db;
+            outline: none;
+        }
+        
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: background-color 0.2s;
+        }
+        
+        .btn-primary {
+            background-color: #3498db;
+            color: white;
+        }
+        
+        .btn-primary:hover:not(:disabled) {
+            background-color: #2980b9;
+        }
+        
+        .btn-secondary {
+            background-color: #95a5a6;
+            color: white;
+        }
+        
+        .btn-secondary:hover:not(:disabled) {
+            background-color: #7f8c8d;
+        }
+        
+        .btn-success {
+            background-color: #27ae60;
+            color: white;
+        }
+        
+        .btn-success:hover:not(:disabled) {
+            background-color: #229954;
+        }
+        
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        
+        .feeds-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+            margin-top: 16px;
+        }
+        
+        .feed-card {
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 16px;
+            background: #fafafa;
+        }
+        
+        .feed-card h3 {
+            color: #2c3e50;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+        }
+        
+        .feed-description {
+            color: #7f8c8d;
+            font-size: 0.9em;
+            margin-bottom: 12px;
+        }
+        
+        .feed-stats {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin-bottom: 12px;
+            font-size: 0.9em;
+        }
+        
+        .stat-item {
+            display: flex;
+            justify-content: space-between;
+        }
+        
+        .stat-label {
+            color: #7f8c8d;
+        }
+        
+        .stat-value {
+            font-weight: 500;
+            color: #2c3e50;
+        }
+        
+        .risk-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 0.8em;
+            font-weight: 500;
+            text-transform: uppercase;
+        }
+        
+        .risk-high { background-color: #ffebee; color: #c62828; }
+        .risk-medium { background-color: #fff3e0; color: #ef6c00; }
+        .risk-low { background-color: #e8f5e8; color: #2e7d32; }
+        
+        .lookup-result {
+            margin-top: 16px;
+            padding: 12px;
+            border-radius: 4px;
+            font-family: monospace;
+            white-space: pre-wrap;
+        }
+        
+        .result-found {
+            background-color: #ffebee;
+            border-left: 4px solid #e74c3c;
+            color: #c62828;
+        }
+        
+        .result-not-found {
+            background-color: #e8f5e8;
+            border-left: 4px solid #27ae60;
+            color: #2e7d32;
+        }
+        
+        .result-error {
+            background-color: #fff3e0;
+            border-left: 4px solid #f39c12;
+            color: #d68910;
+        }
+        
+        .loading {
+            color: #7f8c8d;
+            font-style: italic;
+        }
+        
+        .last-updated {
+            font-size: 0.8em;
+            color: #95a5a6;
+            margin-top: 12px;
+        }
+        
+        .refresh-status {
+            font-size: 0.8em;
+            margin-top: 8px;
+        }
+        
+        .countdown {
+            color: #e67e22;
+            font-weight: 500;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>
+                <span id="health-indicator" class="status-indicator status-unknown"></span>
+                ThreatBridge
+            </h1>
+            <p>Threat Intelligence Feed Management and Lookup</p>
+            <div class="last-updated" id="last-updated">Last updated: Never</div>
+        </div>
+        
+        <div class="section">
+            <h2>Quick Lookup</h2>
+            <div class="lookup-form">
+                <input type="text" id="lookup-input" placeholder="Enter IP address or domain name">
+                <button class="btn btn-primary" onclick="performLookup()">Lookup</button>
+                <button class="btn btn-secondary" onclick="clearLookup()">Clear</button>
+            </div>
+            <div id="lookup-result"></div>
+        </div>
+        
+        <div class="section">
+            <h2>Feed Status</h2>
+            <button class="btn btn-success" onclick="refreshAllData()">Refresh Dashboard</button>
+            <div id="feeds-container" class="feeds-grid">
+                <div class="loading">Loading feed information...</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let healthStatus = { redis_connected: false };
+        let feedsData = [];
+        let refreshCountdowns = {};
+
+        // Auto-refresh dashboard every 30 seconds
+        setInterval(refreshAllData, 30000);
+
+        // Initial load
+        document.addEventListener('DOMContentLoaded', function() {
+            refreshAllData();
+            
+            // Allow Enter key in lookup input
+            document.getElementById('lookup-input').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    performLookup();
+                }
+            });
+        });
+
+        async function fetchApi(endpoint) {
+            try {
+                const response = await fetch(endpoint);
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                return await response.json();
+            } catch (error) {
+                console.error(`API call failed for ${endpoint}:`, error);
+                throw error;
+            }
+        }
+
+        async function refreshAllData() {
+            try {
+                // Fetch health status
+                healthStatus = await fetchApi('/health');
+                updateHealthIndicator();
+                
+                // Fetch feeds data
+                const feedsResponse = await fetchApi('/feeds');
+                feedsData = feedsResponse.feeds || [];
+                updateFeedsDisplay();
+                
+                // Update timestamp
+                document.getElementById('last-updated').textContent = 
+                    `Last updated: ${new Date().toLocaleTimeString()}`;
+                    
+            } catch (error) {
+                console.error('Failed to refresh dashboard:', error);
+                document.getElementById('feeds-container').innerHTML = 
+                    '<div style="color: #e74c3c;">Failed to load dashboard data. Check console for details.</div>';
+            }
+        }
+
+        function updateHealthIndicator() {
+            const indicator = document.getElementById('health-indicator');
+            if (healthStatus.redis_connected) {
+                indicator.className = 'status-indicator status-healthy';
+                indicator.title = 'Redis connected';
+            } else {
+                indicator.className = 'status-indicator status-unhealthy';
+                indicator.title = 'Redis disconnected';
+            }
+        }
+
+        function updateFeedsDisplay() {
+            const container = document.getElementById('feeds-container');
+            
+            if (feedsData.length === 0) {
+                container.innerHTML = '<div>No feeds configured.</div>';
+                return;
+            }
+            
+            const feedCards = feedsData.map(feed => createFeedCard(feed)).join('');
+            container.innerHTML = feedCards;
+            
+            // Start countdown timers
+            updateRefreshCountdowns();
+        }
+
+        function createFeedCard(feed) {
+            // Determine status: error > disabled > healthy
+            let statusClass = 'status-healthy';
+            let statusTitle = 'Enabled';
+            
+            if (!feed.enabled) {
+                statusClass = 'status-unknown';
+                statusTitle = 'Disabled';
+            } else if (feed.last_error) {
+                statusClass = 'status-error';
+                statusTitle = 'Error';
+            }
+            
+            const lastLoaded = feed.last_loaded ? 
+                new Date(feed.last_loaded).toLocaleString() : 'Never';
+                
+            const totalEntries = (feed.entry_count_ips || 0) + (feed.entry_count_domains || 0);
+            
+            // Build status/error message
+            let statusMessage = '';
+            if (!feed.enabled) {
+                statusMessage = `
+                    <div style="background: #f8f9fa; border-left: 3px solid #6c757d; padding: 8px 12px; margin: 10px 0; font-size: 0.85em; color: #6c757d;">
+                        <strong>⏸ Disabled</strong> - Feed is not active. Enable in feeds.yml to load.
+                    </div>`;
+            } else if (feed.last_error) {
+                const errorTime = feed.last_error_time ? 
+                    new Date(feed.last_error_time).toLocaleString() : '';
+                statusMessage = `
+                    <div style="background: #fff3cd; border-left: 3px solid #ffc107; padding: 8px 12px; margin: 10px 0; font-size: 0.85em; color: #856404;">
+                        <strong>⚠ Error:</strong> ${escapeHtml(feed.last_error)}
+                        ${errorTime ? `<br><small style="color: #a08000;">at ${errorTime}</small>` : ''}
+                    </div>`;
+            }
+            
+            return `
+                <div class="feed-card">
+                    <h3>
+                        <span class="status-indicator ${statusClass}" title="${statusTitle}"></span>
+                        ${escapeHtml(feed.name)}
+                        <span class="risk-badge risk-${feed.risk}">${feed.risk}</span>
+                    </h3>
+                    <div class="feed-description">${escapeHtml(feed.description)}</div>
+                    
+                    ${statusMessage}
+                    
+                    <div class="feed-stats">
+                        <div class="stat-item">
+                            <span class="stat-label">Total Entries:</span>
+                            <span class="stat-value">${totalEntries.toLocaleString()}</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">IPs:</span>
+                            <span class="stat-value">${(feed.entry_count_ips || 0).toLocaleString()}</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">Domains:</span>
+                            <span class="stat-value">${(feed.entry_count_domains || 0).toLocaleString()}</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">Last Load:</span>
+                            <span class="stat-value">${lastLoaded}</span>
+                        </div>
+                    </div>
+                    
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <button class="btn btn-primary" 
+                                onclick="refreshFeed('${feed.name}')" 
+                                id="refresh-btn-${feed.name}"
+                                ${!feed.enabled ? 'disabled' : ''}>
+                            Refresh Feed
+                        </button>
+                        <div class="refresh-status" id="refresh-status-${feed.name}"></div>
+                    </div>
+                    
+                    ${feed.entries_added || feed.entries_removed ? `
+                        <div style="font-size: 0.8em; margin-top: 8px; color: #7f8c8d;">
+                            Last change: +${feed.entries_added || 0} / -${feed.entries_removed || 0}
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+        }
+
+        async function refreshFeed(feedName) {
+            const btn = document.getElementById(`refresh-btn-${feedName}`);
+            const status = document.getElementById(`refresh-status-${feedName}`);
+            
+            try {
+                btn.disabled = true;
+                btn.textContent = 'Refreshing...';
+                status.innerHTML = '<span style="color: #3498db;">Refresh started...</span>';
+                
+                const response = await fetch(`/feeds/${feedName}/refresh`, {
+                    method: 'POST'
+                });
+                
+                if (response.status === 429) {
+                    const errorData = await response.json();
+                    startRefreshCountdown(feedName, errorData.retry_after_seconds);
+                    status.innerHTML = `<span style="color: #e67e22;">Rate limited. Try again in <span id="countdown-${feedName}" class="countdown">${errorData.retry_after_seconds}s</span></span>`;
+                } else if (response.status === 202) {
+                    const result = await response.json();
+                    status.innerHTML = '<span style="color: #27ae60;">Refresh accepted</span>';
+                    startRefreshCountdown(feedName, 900); // 15 minutes
+                    
+                    // Refresh dashboard after 5 seconds to show updated data
+                    setTimeout(refreshAllData, 5000);
+                } else {
+                    throw new Error(`Unexpected response: ${response.status}`);
+                }
+                
+            } catch (error) {
+                console.error(`Failed to refresh feed ${feedName}:`, error);
+                status.innerHTML = '<span style="color: #e74c3c;">Refresh failed</span>';
+                btn.disabled = false;
+                btn.textContent = 'Refresh Feed';
+            }
+        }
+
+        function startRefreshCountdown(feedName, seconds) {
+            if (refreshCountdowns[feedName]) {
+                clearInterval(refreshCountdowns[feedName]);
+            }
+            
+            let remaining = seconds;
+            const btn = document.getElementById(`refresh-btn-${feedName}`);
+            const countdownSpan = document.getElementById(`countdown-${feedName}`);
+            
+            refreshCountdowns[feedName] = setInterval(() => {
+                remaining--;
+                
+                if (countdownSpan) {
+                    countdownSpan.textContent = `${remaining}s`;
+                }
+                
+                if (remaining <= 0) {
+                    clearInterval(refreshCountdowns[feedName]);
+                    delete refreshCountdowns[feedName];
+                    
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.textContent = 'Refresh Feed';
+                    }
+                    
+                    const status = document.getElementById(`refresh-status-${feedName}`);
+                    if (status) {
+                        status.innerHTML = '';
+                    }
+                }
+            }, 1000);
+        }
+
+        function updateRefreshCountdowns() {
+            // This function could be enhanced to restore countdown state
+            // For now, we'll just ensure buttons are in correct state
+        }
+
+        async function performLookup() {
+            const input = document.getElementById('lookup-input');
+            const resultDiv = document.getElementById('lookup-result');
+            const query = input.value.trim();
+            
+            if (!query) {
+                showLookupResult('Please enter an IP address or domain name.', 'error');
+                return;
+            }
+            
+            resultDiv.innerHTML = '<div class="loading">Looking up...</div>';
+            
+            try {
+                // Determine if input is IP or domain
+                const isIP = /^(\d{1,3}\.){3}\d{1,3}$/.test(query) || 
+                           /^([0-9a-fA-F]{1,4}:){1,7}[0-9a-fA-F]{1,4}$/.test(query);
+                
+                const endpoint = isIP ? `/check/ip?ip=${encodeURIComponent(query)}` : 
+                                       `/check/domain?domain=${encodeURIComponent(query)}`;
+                
+                const result = await fetchApi(endpoint);
+                displayLookupResult(result);
+                
+            } catch (error) {
+                showLookupResult(`Lookup failed: ${error.message}`, 'error');
+            }
+        }
+
+        function displayLookupResult(result) {
+            let message = `Query: ${result.query}\nType: ${result.type}\nFound: ${result.found ? 'YES' : 'NO'}`;
+            
+            if (result.found) {
+                message += `\nRisk Level: ${result.risk || 'Unknown'}`;
+                message += `\nFeeds: ${result.feeds ? result.feeds.join(', ') : 'None'}`;
+                
+                if (result.match_type) {
+                    message += `\nMatch Type: ${result.match_type}`;
+                }
+                
+                if (result.matched_value) {
+                    message += `\nMatched Value: ${result.matched_value}`;
+                }
+            }
+            
+            const resultClass = result.found ? 'result-found' : 'result-not-found';
+            showLookupResult(message, resultClass);
+        }
+
+        function showLookupResult(message, className) {
+            const resultDiv = document.getElementById('lookup-result');
+            resultDiv.innerHTML = `<div class="lookup-result ${className}">${escapeHtml(message)}</div>`;
+        }
+
+        function clearLookup() {
+            document.getElementById('lookup-input').value = '';
+            document.getElementById('lookup-result').innerHTML = '';
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+    </script>
+</body>
+</html>

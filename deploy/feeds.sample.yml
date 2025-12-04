@@ -1,0 +1,81 @@
+# =============================================================================
+# THREAT INTELLIGENCE FEEDS CONFIGURATION
+# =============================================================================
+# 
+# HOW TO ADD A NEW FEED:
+# ----------------------
+# Copy the template below and fill in the values:
+#
+#   - name: your_feed_name          # Required: unique identifier (lowercase, no spaces)
+#     description: "Feed description"  # Required: human-readable description
+#     url: "from env var: YOUR_FEED_URL"  # Required: use env var reference or direct URL
+#     risk: high                     # Required: high | medium | low
+#     enabled: true                  # Required: true | false
+#     # Optional fields:
+#     # format: csv                  # csv | json | txt (default: auto-detect)
+#     # auth_type: bearer            # none | bearer | basic | api_key
+#     # auth_env: YOUR_API_KEY_VAR   # env var name containing auth token
+#     # refresh_minutes: 30          # override global reload_interval
+#     # parser: custom_parser_name   # custom parser function name
+#
+# EXAMPLE FEEDS TO ADD:
+# ---------------------
+#   - name: abuseipdb
+#     description: "AbuseIPDB blacklist"
+#     url: "from env var: ABUSEIPDB_FEED_URL"
+#     risk: high
+#     enabled: false
+#
+#   - name: alienvault_otx
+#     description: "AlienVault OTX pulse indicators"
+#     url: "from env var: OTX_FEED_URL"
+#     risk: medium
+#     enabled: false
+#
+#   - name: blocklist_de
+#     description: "Blocklist.de all attacks list"
+#     url: "https://lists.blocklist.de/lists/all.txt"
+#     risk: medium
+#     enabled: false
+#
+#   - name: feodo_tracker
+#     description: "Feodo Tracker botnet C2 IPs"
+#     url: "https://feodotracker.abuse.ch/downloads/ipblocklist.txt"
+#     risk: high
+#     enabled: false
+#
+# =============================================================================
+
+feeds:
+  - name: proofpoint_compromised_ips
+    description: "Proofpoint Emerging Threats compromised IPs- List of known compromised hosts. Aggressive but reliable. Good for blocking inbound scans/exploits."
+    url: "http://rules.emergingthreats.net/blockrules/compromised-ips.txt"
+    risk: high
+    enabled: false
+
+  - name: proofpoint_block_ips
+    description: "Emerging Threats Block IPs - Wider rulesets often used in Snort/Suricata but they publish IP lists suitable for firewalls."
+    url: "https://rules.emergingthreats.net/fwrules/emerging-Block-IPs.txt"
+    risk: high
+    enabled: true
+
+  - name: cins_army_badguys
+    description: "CINS Army badguys list - IPs with poor reputation scores"
+    url: "http://cinsscore.com/list/ci-badguys.txt"
+    risk: high
+    enabled: true
+
+  # -------------------------------------------------------------------------
+  # ADD YOUR CUSTOM FEEDS BELOW THIS LINE
+  # -------------------------------------------------------------------------
+  # - name: my_custom_feed
+  #   description: "My custom threat feed"
+  #   url: "from env var: MY_FEED_URL"
+  #   risk: medium
+  #   enabled: false
+
+settings:
+  reload_interval_minutes: 60
+  download_timeout_seconds: 300
+  max_entry_length: 253  # max DNS name length
+  min_cidr_prefix: 20    # min CIDR prefix to expand (/20=4096 IPs, /24=254 IPs, /16=65K IPs)

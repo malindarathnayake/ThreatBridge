@@ -1,0 +1,87 @@
+# ThreatBridge - Threat Intelligence Lookup API
+# https://github.com/YOUR_USERNAME/threatbridge
+
+version: '3.8'
+
+services:
+  threatbridge:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: threatbridge
+    restart: unless-stopped
+    ports:
+      - "${API_PORT:-8000}:8000"
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=0
+      - API_PORT=8000
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - FEEDS_CONFIG=/config/feeds.yml
+      - MALWAREURL_FEED_URL=${MALWAREURL_FEED_URL}
+      - PROOFPOINT_FEED_URL=${PROOFPOINT_FEED_URL:-}
+    volumes:
+      - ./source/config:/config:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - threatbridge-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  redis:
+    image: redis:7-alpine
+    container_name: threatbridge-redis
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6379:6379"  # Only bind to localhost for security
+    command: redis-server --save 900 1 --save 300 10 --save 60 10000
+    volumes:
+      - redis-data:/data
+    networks:
+      - threatbridge-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # Optional standalone loader service (commented out by default)
+  # Uncomment to run loader as separate container
+  # threatbridge-loader:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile.loader
+  #   container_name: threatbridge-loader
+  #   environment:
+  #     - REDIS_HOST=redis
+  #     - REDIS_PORT=6379
+  #     - REDIS_DB=0
+  #     - LOG_LEVEL=${LOG_LEVEL:-INFO}
+  #     - FEEDS_CONFIG=/config/feeds.yml
+  #     - MALWAREURL_FEED_URL=${MALWAREURL_FEED_URL}
+  #     - PROOFPOINT_FEED_URL=${PROOFPOINT_FEED_URL:-}
+  #   volumes:
+  #     - ./source/config:/config:ro
+  #   depends_on:
+  #     redis:
+  #       condition: service_healthy
+  #   networks:
+  #     - threatbridge-network
+  #   # Run once and exit (for cron-triggered execution)
+  #   restart: "no"
+
+volumes:
+  redis-data:
+    driver: local
+
+networks:
+  threatbridge-network:
+    driver: bridge

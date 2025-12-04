@@ -1,0 +1,46 @@
+# ThreatBridge - Loader Container
+#
+# SETUP: Copy config/feeds.sample.yml → config/feeds.yml and customize:
+#   - Enable/disable feeds as needed
+#   - Add your own feed URLs
+#   - Set API keys in .env file for "from env var:" references
+#
+FROM python:3.11-slim
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+
+# Create app user
+RUN groupadd -r app && useradd -r -g app app
+
+# Set work directory
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements first for better caching
+COPY requirements.txt .
+
+# Install Python dependencies
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir -r requirements.txt
+
+# Copy application code
+COPY source/src/ ./src/
+
+# Create directory for config
+RUN mkdir -p /config
+
+# Change ownership to app user
+RUN chown -R app:app /app /config
+
+# Switch to app user
+USER app
+
+# Default command runs the loader once
+CMD ["python", "-c", "import asyncio; from src.loader import load_all_feeds; asyncio.run(load_all_feeds())"]
