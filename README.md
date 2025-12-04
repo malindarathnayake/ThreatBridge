@@ -480,6 +480,25 @@ docker-compose exec redis redis-cli --latency
 curl http://localhost:8000/metrics | grep ti_lookup_duration
 ```
 
+**5. Redis Memory Overcommit Warning**
+
+If you see this warning in Redis logs:
+```
+WARNING Memory overcommit must be enabled!
+```
+
+This is a Linux kernel setting. To fix it on the Docker host:
+```bash
+# Temporary (until reboot)
+sudo sysctl vm.overcommit_memory=1
+
+# Permanent (add to sysctl.conf)
+echo 'vm.overcommit_memory = 1' | sudo tee -a /etc/sysctl.conf
+sudo sysctl -p
+```
+
+> **Note:** This warning doesn't prevent Redis from working, but enabling overcommit prevents potential background save failures under low memory conditions.
+
 ### Performance Tuning
 
 **Redis Configuration:**

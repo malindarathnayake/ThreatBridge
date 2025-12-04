@@ -1,8 +1,6 @@
 # ThreatBridge - Simple Deployment
 # Download this file and feeds.sample.yml, then run: docker-compose up -d
 
-version: '3.8'
-
 services:
   threatbridge:
     image: ghcr.io/malindarathnayake/threatbridge-api:latest
