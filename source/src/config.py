@@ -46,6 +46,7 @@ class SettingsConfig(BaseModel):
     download_timeout_seconds: int = Field(default=300, gt=0, description="HTTP download timeout")
     max_entry_length: int = Field(default=253, gt=0, description="Maximum entry length (DNS limit)")
     min_cidr_prefix: int = Field(default=20, ge=8, le=32, description="Min CIDR prefix to expand (/20=4096 IPs max)")
+    batch_size: int = Field(default=10000, gt=0, description="Lines to process in each batch for streaming feeds")
     ipinfo_token: Optional[str] = Field(default=None, description="IPInfo API token for web UI enrichment")
 
 

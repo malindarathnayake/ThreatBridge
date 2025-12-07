@@ -1,5 +1,6 @@
 """Feed loader for downloading, parsing, and loading threat intelligence feeds."""
 
+import asyncio
 import hashlib
 import logging
 import time
@@ -32,9 +33,156 @@ class FeedLoader:
     def __init__(self):
         self.timeout = app_config.config.settings.download_timeout_seconds
         self.max_entry_length = app_config.config.settings.max_entry_length
+        self.batch_size = app_config.config.settings.batch_size
         # Min prefix for CIDR expansion (default /20 = max 4096 IPs per CIDR)
         self.min_cidr_prefix = getattr(app_config.config.settings, 'min_cidr_prefix', 20)
     
+    def _clear_staging_keys(self, feed_name: str) -> None:
+        """Clear staging keys for a feed."""
+        staging_keys = [
+            f"ti:feed:{feed_name}:ips:new",
+            f"ti:feed:{feed_name}:domains:new",
+            f"ti:feed:{feed_name}:domains:walkable:new"
+        ]
+        redis_client.delete(*staging_keys)
+    
+    async def _process_and_flush_batch(self, feed_name: str, batch: List[str]) -> None:
+        """
+        Process a batch of lines and flush to Redis staging.
+        
+        Args:
+            feed_name: Name of the feed
+            batch: List of raw lines to process
+        """
+        if not batch:
+            return
+        
+        # Use asyncio.to_thread for CPU-bound classification
+        def classify_batch(lines: List[str]) -> Tuple[List[str], List[str], List[str]]:
+            ips, domains, walkable = [], [], []
+            
+            for line in lines:
+                # Skip comments and empty lines
+                if not line.strip() or line.strip().startswith('#'):
+                    continue
+                
+                # Normalize entry
+                entry = psl_classifier.normalize_entry(line)
+                
+                # Check for CIDR notation first
+                if psl_classifier.is_cidr_notation(entry):
+                    expanded_ips = psl_classifier.expand_cidr(entry, self.min_cidr_prefix)
+                    if expanded_ips:
+                        ips.extend(expanded_ips)
+                    continue
+                
+                # Validate entry
+                if not psl_classifier.is_valid_entry(entry, self.max_entry_length):
+                    continue
+                
+                # Classify entry
+                entry_type, is_walkable = psl_classifier.classify_entry(entry)
+                
+                if entry_type == "ip":
+                    ips.append(entry)
+                elif entry_type == "domain":
+                    domains.append(entry)
+                    if is_walkable:
+                        walkable.append(entry)
+            
+            return ips, domains, walkable
+        
+        # Process classification in a thread to avoid blocking the event loop
+        ips, domains, walkable = await asyncio.to_thread(classify_batch, batch)
+        
+        # Append to staging sets (not replace)
+        if ips:
+            redis_client.add_feed_ips(feed_name, ips, staging=True)
+        if domains:
+            redis_client.add_feed_domains(feed_name, domains, staging=True)
+        if walkable:
+            redis_client.add_feed_walkable_domains(feed_name, walkable, staging=True)
+    
+    async def stream_and_process_feed(self, feed_config: FeedConfig) -> Tuple[bool, Optional[str], Optional[Dict]]:
+        """
+        Stream and process feed with batching to avoid memory issues.
+        
+        Args:
+            feed_config: Feed configuration
+        
+        Returns:
+            Tuple of (success, error_message, feed_data)
+            feed_data contains: headers, file_hash, entry_counts
+        """
+        try:
+            url = feed_config.get_resolved_url()
+            feed_name = feed_config.name
+            logger.info(f"Streaming feed '{feed_name}' from {url}")
+            
+            # Clear staging keys upfront
+            self._clear_staging_keys(feed_name)
+            
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                async with client.stream('GET', url) as response:
+                    response.raise_for_status()
+                    
+                    hasher = hashlib.sha256()
+                    batch = []
+                    line_count = 0
+                    
+                    async for line in response.aiter_lines():
+                        hasher.update((line + '\n').encode('utf-8'))
+                        line_count += 1
+                        
+                        batch.append(line)
+                        
+                        if len(batch) >= self.batch_size:
+                            await self._process_and_flush_batch(feed_name, batch)
+                            batch = []
+                            
+                            # Progress logging every 100k lines
+                            if line_count % 100000 == 0:
+                                logger.info(f"Feed '{feed_name}': processed {line_count:,} lines...")
+                    
+                    # Flush remaining batch
+                    if batch:
+                        await self._process_and_flush_batch(feed_name, batch)
+                    
+                    # Get final counts from Redis staging keys
+                    ips_count = redis_client.scard(f"ti:feed:{feed_name}:ips:new")
+                    domains_count = redis_client.scard(f"ti:feed:{feed_name}:domains:new")
+                    walkable_count = redis_client.scard(f"ti:feed:{feed_name}:domains:walkable:new")
+                    
+                    feed_data = {
+                        'headers': dict(response.headers),
+                        'file_hash': hasher.hexdigest(),
+                        'entry_count_ips': ips_count,
+                        'entry_count_domains': domains_count,
+                        'entry_count_walkable': walkable_count,
+                        'total_lines': line_count
+                    }
+                    
+                    logger.info(f"Streamed {line_count:,} lines from feed '{feed_name}': "
+                              f"{ips_count} IPs, {domains_count} domains ({walkable_count} walkable), "
+                              f"hash: {feed_data['file_hash'][:16]}...")
+                    
+                    return True, None, feed_data
+                    
+        except httpx.TimeoutException as e:
+            error_msg = f"Download timeout after {self.timeout}s: {e}"
+            logger.error(f"Feed '{feed_config.name}' stream failed: {error_msg}")
+            return False, error_msg, None
+            
+        except httpx.HTTPStatusError as e:
+            error_msg = f"HTTP error {e.response.status_code}: {e.response.reason_phrase}"
+            logger.error(f"Feed '{feed_config.name}' stream failed: {error_msg}")
+            return False, error_msg, None
+            
+        except Exception as e:
+            error_msg = f"Unexpected error: {e}"
+            logger.error(f"Feed '{feed_config.name}' stream failed: {error_msg}")
+            return False, error_msg, None
+
     async def download_feed(self, feed_config: FeedConfig) -> Tuple[bool, Optional[str], Optional[Dict]]:
         """
         Download feed from URL with streaming.
@@ -196,7 +344,83 @@ class FeedLoader:
         
         return entries_added, entries_removed, entries_unchanged
     
-    def stage_entries_to_redis(self, feed_name: str, ips: List[str], domains: List[str], 
+    async def calculate_delta_redis_native(self, feed_name: str) -> Tuple[int, int, int]:
+        """
+        Calculate delta using Redis-native operations to avoid loading large sets into memory.
+        
+        Args:
+            feed_name: Feed name
+        
+        Returns:
+            Tuple of (entries_added, entries_removed, entries_unchanged)
+        """
+        try:
+            # Use temporary keys for calculations
+            temp_new_all = f"ti:feed:{feed_name}:temp:new_all"
+            temp_old_all = f"ti:feed:{feed_name}:temp:old_all"
+            temp_added = f"ti:feed:{feed_name}:temp:added"
+            temp_removed = f"ti:feed:{feed_name}:temp:removed"
+            temp_unchanged = f"ti:feed:{feed_name}:temp:unchanged"
+            
+            # Create unified new set (staging IPs + domains)
+            new_ips_key = f"ti:feed:{feed_name}:ips:new"
+            new_domains_key = f"ti:feed:{feed_name}:domains:new"
+            if redis_client.exists(new_ips_key) and redis_client.exists(new_domains_key):
+                redis_client.sunionstore(temp_new_all, new_ips_key, new_domains_key)
+            elif redis_client.exists(new_ips_key):
+                redis_client.sunionstore(temp_new_all, new_ips_key)
+            elif redis_client.exists(new_domains_key):
+                redis_client.sunionstore(temp_new_all, new_domains_key)
+            else:
+                # No new data
+                return 0, 0, 0
+            
+            # Create unified old set (current IPs + domains)
+            old_ips_key = f"ti:feed:{feed_name}:ips"
+            old_domains_key = f"ti:feed:{feed_name}:domains"
+            if redis_client.exists(old_ips_key) and redis_client.exists(old_domains_key):
+                redis_client.sunionstore(temp_old_all, old_ips_key, old_domains_key)
+            elif redis_client.exists(old_ips_key):
+                redis_client.sunionstore(temp_old_all, old_ips_key)
+            elif redis_client.exists(old_domains_key):
+                redis_client.sunionstore(temp_old_all, old_domains_key)
+            
+            # Calculate deltas using Redis set operations
+            # Added = new - old
+            if redis_client.exists(temp_old_all):
+                redis_client._execute_with_retry(redis_client._redis.sdiffstore, temp_added, temp_new_all, temp_old_all)
+                entries_added = redis_client.scard(temp_added)
+                
+                # Removed = old - new  
+                redis_client._execute_with_retry(redis_client._redis.sdiffstore, temp_removed, temp_old_all, temp_new_all)
+                entries_removed = redis_client.scard(temp_removed)
+                
+                # Unchanged = new ∩ old
+                redis_client._execute_with_retry(redis_client._redis.sinterstore, temp_unchanged, temp_new_all, temp_old_all)
+                entries_unchanged = redis_client.scard(temp_unchanged)
+            else:
+                # No old data, everything is added
+                entries_added = redis_client.scard(temp_new_all)
+                entries_removed = 0
+                entries_unchanged = 0
+            
+            # Clean up temporary keys
+            temp_keys = [temp_new_all, temp_old_all, temp_added, temp_removed, temp_unchanged]
+            redis_client.delete(*temp_keys)
+            
+            logger.debug(f"Feed '{feed_name}' Redis-native delta: +{entries_added}, -{entries_removed}, ={entries_unchanged}")
+            
+            return entries_added, entries_removed, entries_unchanged
+            
+        except Exception as e:
+            logger.error(f"Error calculating Redis-native delta for feed '{feed_name}': {e}")
+            # Fallback to simple counts without delta calculation
+            new_ips_count = redis_client.scard(f"ti:feed:{feed_name}:ips:new")
+            new_domains_count = redis_client.scard(f"ti:feed:{feed_name}:domains:new")
+            total_new = new_ips_count + new_domains_count
+            return total_new, 0, 0  # Assume all entries are new on error
+    
+    def stage_entries_to_redis(self, feed_name: str, ips: List[str], domains: List[str],
                              walkable_domains: List[str]) -> bool:
         """
         Stage entries to Redis with :new suffix.
@@ -319,7 +543,7 @@ class FeedLoader:
     
     async def load_feed(self, feed_config: FeedConfig) -> FeedLoadResult:
         """
-        Load a single feed completely.
+        Load a single feed with streaming and batch processing.
         
         Args:
             feed_config: Feed configuration
@@ -330,11 +554,11 @@ class FeedLoader:
         start_time = time.time()
         feed_name = feed_config.name
         
-        logger.info(f"Starting load for feed '{feed_name}'")
+        logger.info(f"Starting streaming load for feed '{feed_name}'")
         
         try:
-            # Download feed
-            success, error_msg, feed_data = await self.download_feed(feed_config)
+            # Stream and process feed with batching
+            success, error_msg, feed_data = await self.stream_and_process_feed(feed_config)
             if not success:
                 # Update metadata with error
                 dummy_stats = LoadStats(
@@ -350,31 +574,8 @@ class FeedLoader:
                 self.update_metrics(feed_name, dummy_stats, False)
                 return FeedLoadResult(False, error_msg)
             
-            # Parse and classify entries
-            ips, domains, walkable_domains = self.parse_and_classify_entries(
-                feed_data['content'], feed_name
-            )
-            
-            # Stage to Redis
-            if not self.stage_entries_to_redis(feed_name, ips, domains, walkable_domains):
-                error_msg = "Failed to stage entries to Redis"
-                dummy_stats = LoadStats(
-                    entries_added=0,
-                    entries_removed=0,
-                    entries_unchanged=0,
-                    entry_count_ips=len(ips),
-                    entry_count_domains=len(domains),
-                    load_duration_seconds=time.time() - start_time,
-                    file_hash=feed_data['file_hash']
-                )
-                self.update_feed_metadata(feed_config, dummy_stats, error_msg)
-                self.update_metrics(feed_name, dummy_stats, False)
-                return FeedLoadResult(False, error_msg)
-            
-            # Calculate delta
-            entries_added, entries_removed, entries_unchanged = self.calculate_delta(
-                feed_name, set(ips), set(domains), set(walkable_domains)
-            )
+            # Calculate delta using Redis-native operations (memory efficient)
+            entries_added, entries_removed, entries_unchanged = await self.calculate_delta_redis_native(feed_name)
             
             # Atomic swap from staging to live
             redis_client.swap_staging_to_live(feed_name)
@@ -384,8 +585,8 @@ class FeedLoader:
                 entries_added=entries_added,
                 entries_removed=entries_removed,
                 entries_unchanged=entries_unchanged,
-                entry_count_ips=len(ips),
-                entry_count_domains=len(domains),
+                entry_count_ips=feed_data['entry_count_ips'],
+                entry_count_domains=feed_data['entry_count_domains'],
                 load_duration_seconds=time.time() - start_time,
                 file_hash=feed_data['file_hash'],
                 last_modified=feed_data['headers'].get('last-modified'),
@@ -396,15 +597,17 @@ class FeedLoader:
             self.update_feed_metadata(feed_config, stats)
             self.update_metrics(feed_name, stats, True)
             
-            logger.info(f"Successfully loaded feed '{feed_name}': "
-                       f"{len(ips)} IPs, {len(domains)} domains ({len(walkable_domains)} walkable), "
+            logger.info(f"Successfully streamed feed '{feed_name}': "
+                       f"{feed_data['entry_count_ips']} IPs, "
+                       f"{feed_data['entry_count_domains']} domains "
+                       f"({feed_data['entry_count_walkable']} walkable), "
                        f"+{entries_added}/-{entries_removed} delta, "
                        f"{stats.load_duration_seconds:.1f}s")
             
             return FeedLoadResult(True, None, stats)
             
         except Exception as e:
-            error_msg = f"Unexpected error during feed load: {e}"
+            error_msg = f"Unexpected error during streaming feed load: {e}"
             logger.error(f"Feed '{feed_name}' load failed: {error_msg}")
             
             dummy_stats = LoadStats(

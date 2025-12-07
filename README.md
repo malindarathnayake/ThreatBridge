@@ -505,6 +505,16 @@ sudo sysctl vm.overcommit_memory=1
 ## Changelog
 
 <details>
+<summary><strong>v1.3.0 (2025-12-06)</strong> - Click to expand</summary>
+
+- **Streaming feed processing** for memory-efficient handling of large feeds (19M+ lines)
+- **Redis-native delta calculation** to avoid loading large sets into memory
+- **Asynchronous batch processing** with configurable batch sizes
+- **Fixed OOM crashes** and worker timeout kills on large feeds
+
+</details>
+
+<details>
 <summary><strong>v1.2.0 (2025-12-04)</strong> - Click to expand</summary>
 
 - **Gunicorn with 4 workers** for improved API throughput and concurrency
