@@ -5,6 +5,23 @@ All notable changes to ThreatBridge will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2025-12-06
+
+### Added
+- **Streaming feed processing**: Implemented memory-efficient streaming architecture for large threat intelligence feeds (19M+ lines) with configurable batch processing.
+- **Redis-native delta calculation**: Added memory-efficient delta calculation using Redis SDIFF/SINTER operations to avoid loading large sets into Python memory.
+- **Asynchronous batch processing**: CPU-bound classification now uses `asyncio.to_thread()` to prevent event loop blocking during feed processing.
+- **Progress logging**: Real-time progress updates every 100k lines during large feed processing.
+- **Configurable batch size**: Added `batch_size` setting (default: 10,000 lines) to control memory usage vs processing speed.
+
+### Changed
+- **Feed loader architecture**: Replaced memory-intensive download approach with streaming processing that reduces memory usage from ~4GB to ~50MB for large feeds.
+- **Worker timeout resilience**: Large feeds no longer trigger Gunicorn worker timeouts due to incremental processing approach.
+
+### Fixed
+- **OOM crashes on large feeds**: Fixed out-of-memory crashes when processing feeds with 19M+ lines (malwareurl feed).
+- **Worker timeout kills**: Eliminated SIGKILL worker terminations during large feed processing.
+
 ## [1.2.1] - 2025-12-04
 
 ### Added
@@ -70,4 +87,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 - Redis bound to localhost only by default
 - Feed URLs support environment variable references for sensitive keys
-
