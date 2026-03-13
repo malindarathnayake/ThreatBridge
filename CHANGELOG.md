@@ -5,6 +5,13 @@ All notable changes to ThreatBridge will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-03-13
+
+### Added
+- **Graylog firewall enrichment for Quick Lookup**: IP lookups now show firewall activity from the last 24 hours alongside threat feed and IPInfo results. Queries Graylog's FortiGate syslog stream for denied/accepted traffic, top firewall policies, destination ports, interfaces, and NAT translations. Configure via `GRAYLOG_URL` and `GRAYLOG_TOKEN` environment variables. Runs in parallel with existing enrichments — Graylog failures never block threat feed or IPInfo results.
+- **Prometheus metrics for Graylog enrichment**: New `ti_graylog_enrichment_total` counter and `ti_graylog_enrichment_duration_seconds` histogram track Graylog query performance.
+- **Graylog environment variables**: `GRAYLOG_URL`, `GRAYLOG_TOKEN`, `GRAYLOG_STREAM_ID`, `GRAYLOG_TIMEOUT`, `GRAYLOG_VERIFY_SSL` added to `.env.example` and docker-compose files.
+
 ## [1.3.0] - 2025-12-06
 
 ### Added

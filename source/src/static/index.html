@@ -605,34 +605,35 @@
                                        `/check/domain?domain=${encodeURIComponent(query)}`;
                 
                 // Fetch TI result and IPInfo enrichment in parallel for IPs
-                const [result, ipInfo] = await Promise.all([
+                const [result, ipInfo, graylogInfo] = await Promise.all([
                     fetchApi(endpoint),
-                    isIP ? fetchApi(`/ui/enrich/ip?ip=${encodeURIComponent(query)}`).catch(() => null) : Promise.resolve(null)
+                    isIP ? fetchApi(`/ui/enrich/ip?ip=${encodeURIComponent(query)}`).catch(() => null) : Promise.resolve(null),
+                    isIP ? fetchApi(`/ui/enrich/graylog?ip=${encodeURIComponent(query)}`).catch(() => null) : Promise.resolve(null)
                 ]);
-                
-                displayLookupResult(result, ipInfo);
+
+                displayLookupResult(result, ipInfo, graylogInfo);
                 
             } catch (error) {
                 showLookupResult(`Lookup failed: ${error.message}`, 'error');
             }
         }
 
-        function displayLookupResult(result, ipInfo = null) {
+        function displayLookupResult(result, ipInfo = null, graylogInfo = null) {
             let message = `Query: ${result.query}\nType: ${result.type}\nFound: ${result.found ? 'YES' : 'NO'}`;
-            
+
             if (result.found) {
                 message += `\nRisk Level: ${result.risk || 'Unknown'}`;
                 message += `\nFeeds: ${result.feeds ? result.feeds.join(', ') : 'None'}`;
-                
+
                 if (result.match_type) {
                     message += `\nMatch Type: ${result.match_type}`;
                 }
-                
+
                 if (result.matched_value) {
                     message += `\nMatched Value: ${result.matched_value}`;
                 }
             }
-            
+
             // Add IPInfo enrichment data if available and configured
             if (ipInfo && ipInfo.configured !== false && !ipInfo.error) {
                 message += `\n\n--- IP Info ---`;
@@ -644,7 +645,65 @@
             } else if (ipInfo && ipInfo.configured === false) {
                 message += `\n\n(IPInfo enrichment: not configured)`;
             }
-            
+
+            // Graylog Firewall Activity
+            if (graylogInfo && graylogInfo.available && graylogInfo.total_hits > 0) {
+                message += '\n\n--- Firewall Activity (last 24h) ---\n';
+                message += `Total Hits: ${graylogInfo.total_hits}\n`;
+                if (graylogInfo.device) message += `Source: ${graylogInfo.device}\n`;
+
+                // DENIED section
+                if (graylogInfo.denied && graylogInfo.denied.count > 0) {
+                    message += `\nDENIED (${graylogInfo.denied.count} hits)\n`;
+                    if (graylogInfo.denied.top_policies.length > 0) {
+                        message += '  Top Policies:\n';
+                        graylogInfo.denied.top_policies.forEach(p => {
+                            message += `    ${p.name}  (${p.count})\n`;
+                        });
+                    }
+                    if (graylogInfo.denied.top_dst_ports.length > 0) {
+                        message += '  Top Dest Ports: ' +
+                            graylogInfo.denied.top_dst_ports.map(p => `${p.port} (${p.count})`).join(', ') + '\n';
+                    }
+                    if (graylogInfo.denied.interfaces.length > 0) {
+                        message += '  Interfaces: ' + graylogInfo.denied.interfaces.join(', ') + '\n';
+                    }
+                }
+
+                // ACCEPTED section
+                if (graylogInfo.accepted && graylogInfo.accepted.count > 0) {
+                    message += `\nACCEPTED (${graylogInfo.accepted.count} hits)\n`;
+                    if (graylogInfo.accepted.top_policies.length > 0) {
+                        message += '  Top Policies:\n';
+                        graylogInfo.accepted.top_policies.forEach(p => {
+                            message += `    ${p.name}  (${p.count})\n`;
+                        });
+                    }
+                    if (graylogInfo.accepted.top_dst_ports.length > 0) {
+                        message += '  Top Dest Ports: ' +
+                            graylogInfo.accepted.top_dst_ports.map(p => `${p.port} (${p.count})`).join(', ') + '\n';
+                    }
+                    if (graylogInfo.accepted.nat_translations && graylogInfo.accepted.nat_translations.length > 0) {
+                        message += '  NAT Translations:\n';
+                        graylogInfo.accepted.nat_translations.forEach(t => {
+                            message += `    ${t.ip}:${t.port}  (${t.count})\n`;
+                        });
+                    }
+                    if (graylogInfo.accepted.interfaces.length > 0) {
+                        message += '  Interfaces: ' + graylogInfo.accepted.interfaces.join(', ') + '\n';
+                    }
+                }
+            } else if (graylogInfo && graylogInfo.available && graylogInfo.total_hits === 0) {
+                message += '\n\n--- Firewall Activity (last 24h) ---\n';
+                message += 'No firewall activity in last 24h\n';
+            } else if (graylogInfo === null || (graylogInfo && !graylogInfo.available)) {
+                // Only show if Graylog is configured (don't show for "not configured" error)
+                if (graylogInfo && graylogInfo.error !== 'not configured') {
+                    message += '\n\n--- Firewall Activity (last 24h) ---\n';
+                    message += 'Graylog unavailable\n';
+                }
+            }
+
             const resultClass = result.found ? 'result-found' : 'result-not-found';
             showLookupResult(message, resultClass);
         }

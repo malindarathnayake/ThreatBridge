@@ -94,6 +94,54 @@ class ErrorResponse(BaseModel):
     message: str = Field(..., description="Error message")
 
 
+# Graylog Firewall Enrichment models
+
+class PolicyCount(BaseModel):
+    """Firewall policy hit count."""
+    name: str = Field(..., description="Policy name or ID")
+    count: int = Field(..., description="Number of hits")
+
+
+class PortCount(BaseModel):
+    """Destination port hit count."""
+    port: int = Field(..., description="Destination port number")
+    count: int = Field(..., description="Number of hits")
+
+
+class NatTranslation(BaseModel):
+    """NAT translation entry."""
+    ip: str = Field(..., description="Translated IP address")
+    port: int = Field(..., description="Translated port")
+    count: int = Field(..., description="Number of occurrences")
+
+
+class ActionSummary(BaseModel):
+    """Summary of firewall actions (DENIED or ACCEPTED)."""
+    count: int = Field(..., description="Total hit count for this action")
+    top_policies: List[PolicyCount] = Field(..., description="Top policies by hit count")
+    top_dst_ports: List[PortCount] = Field(..., description="Top destination ports by hit count")
+    interfaces: List[str] = Field(..., description="Unique interfaces seen")
+    nat_translations: Optional[List[NatTranslation]] = Field(None, description="NAT translations (ACCEPTED only)")
+
+
+class GraylogEnrichmentResponse(BaseModel):
+    """Response from Graylog firewall enrichment."""
+    available: bool = Field(..., description="Whether Graylog data is available")
+    ip: str = Field(..., description="Queried IP address")
+    total_hits: Optional[int] = Field(None, description="Total message count")
+    time_range_hours: Optional[int] = Field(None, description="Search time range in hours")
+    device: Optional[str] = Field(None, description="Firewall device name")
+    denied: Optional[ActionSummary] = Field(None, description="Denied traffic summary")
+    accepted: Optional[ActionSummary] = Field(None, description="Accepted traffic summary")
+    error: Optional[str] = Field(None, description="Error message if unavailable")
+
+
+ACTION_NORMALIZATION = {
+    "deny": "DENIED", "drop": "DENIED", "reject": "DENIED", "close": "DENIED",
+    "accept": "ACCEPTED", "allow": "ACCEPTED", "ip-conn": "ACCEPTED",
+}
+
+
 class FeedMetadata(BaseModel):
     """Feed metadata stored in Redis."""
     description: str = Field(..., description="Feed description")

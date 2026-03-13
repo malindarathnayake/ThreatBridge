@@ -79,6 +79,19 @@ ti_redis_connection_status = Gauge(
     'Redis connection status (1=connected, 0=disconnected)'
 )
 
+# Graylog enrichment metrics
+ti_graylog_enrichment_total = Counter(
+    'ti_graylog_enrichment_total',
+    'Graylog enrichment request count',
+    ['result']  # available/unavailable/error
+)
+
+ti_graylog_enrichment_duration_seconds = Histogram(
+    'ti_graylog_enrichment_duration_seconds',
+    'Graylog enrichment latency',
+    buckets=[0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 7.5, 10.0, 15.0]
+)
+
 
 class MetricsCollector:
     """Helper class for updating metrics."""
@@ -120,6 +133,12 @@ class MetricsCollector:
     def set_redis_connection_status(connected: bool):
         """Set Redis connection status."""
         ti_redis_connection_status.set(1 if connected else 0)
+
+    @staticmethod
+    def record_graylog_enrichment(result: str, duration: float):
+        """Record a Graylog enrichment request."""
+        ti_graylog_enrichment_total.labels(result=result).inc()
+        ti_graylog_enrichment_duration_seconds.observe(duration)
     
     @staticmethod
     def clear_feed_metrics(feed_name: str):

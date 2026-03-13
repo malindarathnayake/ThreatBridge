@@ -1,0 +1,51 @@
+# =============================================================================
+# ThreatBridge .gitattributes
+# =============================================================================
+
+# Auto-detect text files and normalise line endings
+* text=auto
+
+# Source code
+*.py text diff=python
+*.js text
+*.html text diff=html
+*.css text
+*.yml text
+*.yaml text
+*.json text
+*.toml text
+*.cfg text
+*.ini text
+
+# Documentation
+*.md text diff=markdown
+*.txt text
+*.rst text
+
+# Shell / Scripts
+*.sh text eol=lf
+*.bash text eol=lf
+*.ps1 text eol=crlf
+
+# Docker
+Dockerfile text
+docker-compose*.yml text
+
+# Config templates
+*.example text
+*.sample text
+
+# Binary / vendored — do not diff
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.gz binary
+*.tar binary
+*.zip binary
+*.db binary
+*.sqlite binary
+
+# Ensure consistent line endings for CI scripts
+Makefile text eol=lf

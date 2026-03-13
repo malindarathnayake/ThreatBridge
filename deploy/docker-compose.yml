@@ -20,6 +20,11 @@ services:
       - MALWAREURL_FEED_URL=${MALWAREURL_FEED_URL:-}
       - PROOFPOINT_FEED_URL=${PROOFPOINT_FEED_URL:-}
       - SKIP_STARTUP_LOAD=true  # Loader container handles feed loading
+      - GRAYLOG_URL=${GRAYLOG_URL:-}
+      - GRAYLOG_TOKEN=${GRAYLOG_TOKEN:-}
+      - GRAYLOG_STREAM_ID=${GRAYLOG_STREAM_ID:-686add4875a6c5ef0cd4bc44}
+      - GRAYLOG_TIMEOUT=${GRAYLOG_TIMEOUT:-10}
+      - GRAYLOG_VERIFY_SSL=${GRAYLOG_VERIFY_SSL:-false}
     volumes:
       - ./feeds.yml:/config/feeds.yml:ro
       - ./.env:/app/.env:ro
