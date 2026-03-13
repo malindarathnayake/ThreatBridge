@@ -21,6 +21,11 @@ services:
       - FEEDS_CONFIG=/config/feeds.yml
       - MALWAREURL_FEED_URL=${MALWAREURL_FEED_URL}
       - PROOFPOINT_FEED_URL=${PROOFPOINT_FEED_URL:-}
+      - GRAYLOG_URL=${GRAYLOG_URL:-}
+      - GRAYLOG_TOKEN=${GRAYLOG_TOKEN:-}
+      - GRAYLOG_STREAM_ID=${GRAYLOG_STREAM_ID:-686add4875a6c5ef0cd4bc44}
+      - GRAYLOG_TIMEOUT=${GRAYLOG_TIMEOUT:-10}
+      - GRAYLOG_VERIFY_SSL=${GRAYLOG_VERIFY_SSL:-false}
     volumes:
       - ./source/config:/config:ro
     depends_on:

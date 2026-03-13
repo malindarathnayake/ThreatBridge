@@ -18,9 +18,12 @@ from .config import app_config
 from .loader import load_all_feeds, load_single_feed
 from .metrics import get_metrics_content, get_metrics_content_type, metrics_collector
 from .models import (
-    CheckResult, DomainCheckResult, ErrorResponse, FeedDetail, FeedInfo, 
-    FeedsListResponse, HealthResponse, LoadHistoryEntry, RateLimitedResponse, RefreshResponse
+    ACTION_NORMALIZATION, CheckResult, DomainCheckResult, ErrorResponse, FeedDetail, FeedInfo,
+    FeedsListResponse, GraylogEnrichmentResponse, HealthResponse, LoadHistoryEntry,
+    ActionSummary, PolicyCount, PortCount, NatTranslation,
+    RateLimitedResponse, RefreshResponse
 )
+from collections import Counter as CollCounter
 from .psl_classifier import psl_classifier
 from .redis_client import redis_client
 
@@ -35,10 +38,20 @@ logger = logging.getLogger(__name__)
 app = FastAPI(
     title="ThreatBridge",
     description="Lightweight Threat Intelligence Lookup API",
-    version="1.2.0",
+    version="1.4.0",
     docs_url="/docs",
     redoc_url="/redoc"
 )
+
+# Graylog enrichment config
+GRAYLOG_URL = os.getenv("GRAYLOG_URL", "")
+GRAYLOG_TOKEN = os.getenv("GRAYLOG_TOKEN", "")
+GRAYLOG_STREAM_ID = os.getenv("GRAYLOG_STREAM_ID", "686add4875a6c5ef0cd4bc44")
+GRAYLOG_TIMEOUT = int(os.getenv("GRAYLOG_TIMEOUT", "10"))
+GRAYLOG_VERIFY_SSL = os.getenv("GRAYLOG_VERIFY_SSL", "false").lower() in ("1", "true", "yes")
+
+if not GRAYLOG_URL:
+    logging.getLogger(__name__).info("Graylog enrichment skipped (not configured)")
 
 # Global scheduler instance
 scheduler: Optional[AsyncIOScheduler] = None
@@ -472,6 +485,151 @@ async def enrich_ip(ip: str):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={"error": "internal_error", "message": "Failed to enrich IP"}
         )
+
+
+def _aggregate_graylog_messages(messages: list, ip: str) -> GraylogEnrichmentResponse:
+    """Aggregate raw Graylog messages into a structured response."""
+    if not messages:
+        return GraylogEnrichmentResponse(available=True, ip=ip, total_hits=0, time_range_hours=24)
+
+    groups: Dict[str, list] = {"DENIED": [], "ACCEPTED": []}
+    device = None
+
+    for msg_wrapper in messages:
+        msg = msg_wrapper.get("message", {})
+        if device is None:
+            device = msg.get("source") or msg.get("devname")
+
+        action = msg.get("action", "").lower()
+        normalized = ACTION_NORMALIZATION.get(action, "DENIED")
+        groups[normalized].append(msg)
+
+    def build_summary(msgs: list, include_nat: bool = False) -> Optional[ActionSummary]:
+        if not msgs:
+            return None
+
+        policy_counts: Dict[str, int] = {}
+        port_counts: Dict[int, int] = {}
+        interfaces: set = set()
+        nat_counts: Dict[str, int] = {}
+
+        for msg in msgs:
+            # Policy: prefer policyname, fallback to policyid
+            policy = msg.get("policyname") or str(msg.get("policyid", "unknown"))
+            policy_counts[policy] = policy_counts.get(policy, 0) + 1
+
+            # Destination port
+            dstport = msg.get("dstport")
+            if dstport is not None:
+                try:
+                    port = int(dstport)
+                    port_counts[port] = port_counts.get(port, 0) + 1
+                except (ValueError, TypeError):
+                    pass
+
+            # Interface
+            srcintf = msg.get("srcintf")
+            srcintfrole = msg.get("srcintfrole")
+            if srcintf:
+                intf = f"{srcintf} ({srcintfrole})" if srcintfrole else srcintf
+                interfaces.add(intf)
+
+            # NAT translations (accepted only)
+            if include_nat:
+                tranip = msg.get("tranip")
+                tranport = msg.get("tranport")
+                if tranip and tranport:
+                    key = f"{tranip}:{tranport}"
+                    nat_counts[key] = nat_counts.get(key, 0) + 1
+
+        top_policies = sorted(policy_counts.items(), key=lambda x: x[1], reverse=True)[:5]
+        top_ports = sorted(port_counts.items(), key=lambda x: x[1], reverse=True)[:5]
+
+        nat_translations = None
+        if include_nat and nat_counts:
+            top_nat = sorted(nat_counts.items(), key=lambda x: x[1], reverse=True)[:5]
+            nat_translations = [
+                NatTranslation(ip=k.split(":")[0], port=int(k.split(":")[1]), count=v)
+                for k, v in top_nat
+            ]
+
+        return ActionSummary(
+            count=len(msgs),
+            top_policies=[PolicyCount(name=n, count=c) for n, c in top_policies],
+            top_dst_ports=[PortCount(port=p, count=c) for p, c in top_ports],
+            interfaces=sorted(interfaces),
+            nat_translations=nat_translations,
+        )
+
+    total_hits = len(messages)
+    denied = build_summary(groups["DENIED"])
+    accepted = build_summary(groups["ACCEPTED"], include_nat=True)
+
+    return GraylogEnrichmentResponse(
+        available=True,
+        ip=ip,
+        total_hits=total_hits,
+        time_range_hours=24,
+        device=device,
+        denied=denied,
+        accepted=accepted,
+    )
+
+
+@app.get("/ui/enrich/graylog")
+async def enrich_graylog(ip: str):
+    """Enrich IP with Graylog firewall activity data."""
+    if not GRAYLOG_URL:
+        return GraylogEnrichmentResponse(available=False, ip=ip, error="not configured")
+
+    # Validate IP format
+    normalized_ip = psl_classifier.normalize_entry(ip)
+    if not psl_classifier.is_ip_address(normalized_ip):
+        return GraylogEnrichmentResponse(available=False, ip=ip, error="invalid IP")
+
+    start_time = time.time()
+    try:
+        async with httpx.AsyncClient(
+            timeout=GRAYLOG_TIMEOUT,
+            verify=GRAYLOG_VERIFY_SSL,
+        ) as client:
+            response = await client.get(
+                f"{GRAYLOG_URL.rstrip('/')}/api/search/universal/relative",
+                params={
+                    "query": f"srcip:{normalized_ip} OR dstip:{normalized_ip}",
+                    "range": 86400,
+                    "limit": 150,
+                    "sort": "timestamp:desc",
+                    "filter": f"streams:{GRAYLOG_STREAM_ID}",
+                },
+                auth=(GRAYLOG_TOKEN, "token"),
+                headers={
+                    "Accept": "application/json",
+                    "X-Requested-By": "ThreatBridge",
+                },
+            )
+            response.raise_for_status()
+            data = response.json()
+
+        messages = data.get("messages", [])
+        result = _aggregate_graylog_messages(messages, normalized_ip)
+        duration = time.time() - start_time
+
+        logger.info(f"Graylog enrichment for {normalized_ip}: {result.total_hits} hits in {duration:.2f}s")
+        metrics_collector.record_graylog_enrichment("available", duration)
+        return result
+
+    except httpx.TimeoutException:
+        duration = time.time() - start_time
+        logger.warning(f"Graylog enrichment timeout for {normalized_ip} after {GRAYLOG_TIMEOUT}s")
+        metrics_collector.record_graylog_enrichment("unavailable", duration)
+        return GraylogEnrichmentResponse(available=False, ip=normalized_ip, error="timeout")
+
+    except Exception as e:
+        duration = time.time() - start_time
+        logger.warning(f"Graylog enrichment error for {normalized_ip}: {e}")
+        metrics_collector.record_graylog_enrichment("error", duration)
+        return GraylogEnrichmentResponse(available=False, ip=normalized_ip, error=str(e))
 
 
 # Static files and UI
