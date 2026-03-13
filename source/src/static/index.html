@@ -240,6 +240,39 @@
             color: #e67e22;
             font-weight: 500;
         }
+
+        .enrichment-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 16px;
+            margin-top: 16px;
+        }
+
+        .enrichment-card {
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 16px;
+            background: #fafafa;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .enrichment-card h4 {
+            margin: 0;
+            color: #2c3e50;
+            font-size: 1em;
+        }
+
+        .enrichment-card .enrichment-status {
+            font-size: 0.85em;
+            color: #7f8c8d;
+        }
+
+        .enrichment-card .enrichment-error {
+            font-size: 0.85em;
+            color: #e74c3c;
+        }
     </style>
 </head>
 <body>
@@ -268,6 +301,13 @@
             <button class="btn btn-success" onclick="refreshAllData()">Refresh Dashboard</button>
             <div id="feeds-container" class="feeds-grid">
                 <div class="loading">Loading feed information...</div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>Enrichment Sources</h2>
+            <div id="enrichment-container" class="enrichment-grid">
+                <div class="loading">Loading enrichment status...</div>
             </div>
         </div>
     </div>
@@ -307,22 +347,28 @@
 
         async function refreshAllData() {
             try {
-                // Fetch health status
-                healthStatus = await fetchApi('/health');
+                // Fetch health status, feeds data, and enrichment health in parallel
+                const [healthResult, feedsResponse, graylogHealth, ipinfoHealth] = await Promise.all([
+                    fetchApi('/health'),
+                    fetchApi('/feeds'),
+                    fetchApi('/ui/health/graylog').catch(() => null),
+                    fetchApi('/ui/health/ipinfo').catch(() => null)
+                ]);
+
+                healthStatus = healthResult;
                 updateHealthIndicator();
-                
-                // Fetch feeds data
-                const feedsResponse = await fetchApi('/feeds');
+
                 feedsData = feedsResponse.feeds || [];
                 updateFeedsDisplay();
-                
-                // Update timestamp
-                document.getElementById('last-updated').textContent = 
+
+                updateEnrichmentDisplay(graylogHealth, ipinfoHealth);
+
+                document.getElementById('last-updated').textContent =
                     `Last updated: ${new Date().toLocaleTimeString()}`;
-                    
+
             } catch (error) {
                 console.error('Failed to refresh dashboard:', error);
-                document.getElementById('feeds-container').innerHTML = 
+                document.getElementById('feeds-container').innerHTML =
                     '<div style="color: #e74c3c;">Failed to load dashboard data. Check console for details.</div>';
             }
         }
@@ -351,6 +397,54 @@
             
             // Start countdown timers
             updateRefreshCountdowns();
+        }
+
+        function updateEnrichmentDisplay(graylogHealth, ipinfoHealth) {
+            const container = document.getElementById('enrichment-container');
+            let cards = '';
+
+            // Graylog card
+            if (graylogHealth) {
+                let statusClass, statusText;
+                if (graylogHealth.status === 'connected') {
+                    statusClass = 'status-healthy';
+                    statusText = 'Connected';
+                } else if (graylogHealth.status === 'disconnected') {
+                    statusClass = 'status-unhealthy';
+                    statusText = 'Disconnected';
+                } else {
+                    statusClass = 'status-unknown';
+                    statusText = 'Not Configured';
+                }
+
+                cards += `
+                    <div class="enrichment-card">
+                        <span class="status-indicator ${statusClass}" title="${statusText}"></span>
+                        <div>
+                            <h4>Graylog Firewall</h4>
+                            <div class="enrichment-status">${statusText}</div>
+                            ${graylogHealth.error && graylogHealth.status === 'disconnected'
+                                ? `<div class="enrichment-error">${escapeHtml(graylogHealth.error)}</div>`
+                                : ''}
+                        </div>
+                    </div>`;
+            }
+
+            // IPInfo card
+            if (ipinfoHealth) {
+                const configured = ipinfoHealth.configured;
+                cards += `
+                    <div class="enrichment-card">
+                        <span class="status-indicator ${configured ? 'status-healthy' : 'status-unknown'}"
+                              title="${configured ? 'Configured' : 'Not Configured'}"></span>
+                        <div>
+                            <h4>IPInfo Geolocation</h4>
+                            <div class="enrichment-status">${configured ? 'Configured' : 'Not Configured'}</div>
+                        </div>
+                    </div>`;
+            }
+
+            container.innerHTML = cards || '<div>No enrichment sources available.</div>';
         }
 
         function createFeedCard(feed) {

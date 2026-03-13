@@ -19,8 +19,8 @@ from .loader import load_all_feeds, load_single_feed
 from .metrics import get_metrics_content, get_metrics_content_type, metrics_collector
 from .models import (
     ACTION_NORMALIZATION, CheckResult, DomainCheckResult, ErrorResponse, FeedDetail, FeedInfo,
-    FeedsListResponse, GraylogEnrichmentResponse, HealthResponse, LoadHistoryEntry,
-    ActionSummary, PolicyCount, PortCount, NatTranslation,
+    FeedsListResponse, GraylogEnrichmentResponse, GraylogHealthResponse, HealthResponse,
+    LoadHistoryEntry, ActionSummary, PolicyCount, PortCount, NatTranslation,
     RateLimitedResponse, RefreshResponse
 )
 from collections import Counter as CollCounter
@@ -52,6 +52,10 @@ GRAYLOG_VERIFY_SSL = os.getenv("GRAYLOG_VERIFY_SSL", "false").lower() in ("1", "
 
 if not GRAYLOG_URL:
     logging.getLogger(__name__).info("Graylog enrichment skipped (not configured)")
+
+# Graylog health cache (60-second TTL)
+_graylog_health_cache: Dict = {"result": None, "timestamp": 0.0}
+GRAYLOG_HEALTH_CACHE_TTL = 60
 
 # Global scheduler instance
 scheduler: Optional[AsyncIOScheduler] = None
@@ -630,6 +634,62 @@ async def enrich_graylog(ip: str):
         logger.warning(f"Graylog enrichment error for {normalized_ip}: {e}")
         metrics_collector.record_graylog_enrichment("error", duration)
         return GraylogEnrichmentResponse(available=False, ip=normalized_ip, error=str(e))
+
+
+@app.get("/ui/health/graylog")
+async def health_graylog():
+    """Check Graylog connectivity with 60s response cache."""
+    if not GRAYLOG_URL:
+        return GraylogHealthResponse(status="not_configured")
+
+    # Check cache
+    now = time.time()
+    if _graylog_health_cache["result"] and (now - _graylog_health_cache["timestamp"]) < GRAYLOG_HEALTH_CACHE_TTL:
+        cached = _graylog_health_cache["result"].copy()
+        cached["cached"] = True
+        return cached
+
+    # Ping Graylog
+    try:
+        async with httpx.AsyncClient(
+            timeout=GRAYLOG_TIMEOUT,
+            verify=GRAYLOG_VERIFY_SSL,
+        ) as client:
+            response = await client.get(
+                f"{GRAYLOG_URL.rstrip('/')}/api/search/universal/relative",
+                params={"query": "*", "range": 1, "limit": 1,
+                        "filter": f"streams:{GRAYLOG_STREAM_ID}"},
+                auth=(GRAYLOG_TOKEN, "token"),
+                headers={"Accept": "application/json",
+                         "X-Requested-By": "ThreatBridge"},
+            )
+            response.raise_for_status()
+
+        result = {"status": "connected", "error": None, "cached": False}
+        logger.debug("Graylog health check: connected")
+
+    except httpx.TimeoutException:
+        result = {"status": "disconnected", "error": "timeout", "cached": False}
+        logger.warning("Graylog health check failed: timeout")
+
+    except httpx.HTTPStatusError as e:
+        error_msg = "auth failed" if e.response.status_code in (401, 403) else f"HTTP {e.response.status_code}"
+        result = {"status": "disconnected", "error": error_msg, "cached": False}
+        logger.warning(f"Graylog health check failed: {error_msg}")
+
+    except Exception as e:
+        result = {"status": "disconnected", "error": str(e), "cached": False}
+        logger.warning(f"Graylog health check failed: {e}")
+
+    _graylog_health_cache["result"] = result
+    _graylog_health_cache["timestamp"] = time.time()
+    return result
+
+
+@app.get("/ui/health/ipinfo")
+async def health_ipinfo():
+    """Check if IPInfo enrichment is configured."""
+    return {"configured": bool(app_config.ipinfo_token)}
 
 
 # Static files and UI
