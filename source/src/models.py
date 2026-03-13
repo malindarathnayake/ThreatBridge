@@ -136,6 +136,13 @@ class GraylogEnrichmentResponse(BaseModel):
     error: Optional[str] = Field(None, description="Error message if unavailable")
 
 
+class GraylogHealthResponse(BaseModel):
+    """Graylog connection health status."""
+    status: str = Field(..., description="Connection status: connected, disconnected, not_configured")
+    error: Optional[str] = Field(None, description="Error message if disconnected")
+    cached: bool = Field(False, description="Whether this is a cached response")
+
+
 ACTION_NORMALIZATION = {
     "deny": "DENIED", "drop": "DENIED", "reject": "DENIED", "close": "DENIED",
     "accept": "ACCEPTED", "allow": "ACCEPTED", "ip-conn": "ACCEPTED",
