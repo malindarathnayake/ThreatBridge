@@ -1,4 +1,13 @@
+<p align="center">
+  <img src=".github/Banner.png" alt="ThreatBridge Banner" width="100%">
+</p>
+
 # ThreatBridge
+
+![Version](https://img.shields.io/badge/version-1.4.1-blue)
+![License](https://img.shields.io/github/license/malindarathnayake/ThreatBridge)
+![Docker](https://img.shields.io/badge/docker-ready-green)
+![Python](https://img.shields.io/badge/python-3.11+-yellow)
 
 A lightweight threat intelligence API that aggregates free IP/domain reputation feeds into a fast, queryable REST API for SIEM log enrichment.
 
@@ -38,7 +47,9 @@ FREE/PAID TEXT FEEDS          THREATBRIDGE           COMMERCIAL APIs
 - **PSL-Aware Matching**: Subdomain matching using Public Suffix List logic
 - **CIDR Support**: Automatic expansion of CIDR notation (e.g., `192.168.0.0/24`)
 - **Feed Management**: Automatic downloading, parsing, and delta tracking
-- **Management UI**: Web-based dashboard for feed status and quick lookups
+- **Graylog Firewall Enrichment**: Quick Lookup shows firewall activity (denied/accepted traffic, policies, ports, NAT) from Graylog. Currently parses FortiGate syslog fields — a future version will add a configurable parser to support any firewall/message structure.
+- **IPInfo Geolocation**: Optional IP enrichment with ASN, org, and country data via IPInfo Lite API
+- **Management UI**: Web dashboard with feed status, quick lookups, and enrichment source health indicators
 - **Prometheus Metrics**: Comprehensive metrics for monitoring
 - **Rate Limiting**: Built-in rate limiting for manual feed refreshes
 - **Docker Ready**: Fully containerized with Docker Compose
@@ -268,6 +279,11 @@ settings:
 | `PROOFPOINT_FEED_URL` | - | Proofpoint feed URL (optional) |
 | `LOADER_CHECK_INTERVAL` | 3600 | How often (seconds) the loader checks for feeds due for refresh |
 | `IPINFO_TOKEN` | - | IPInfo API token for IP enrichment in web UI (optional) |
+| `GRAYLOG_URL` | - | Graylog API base URL (e.g., `https://graylog.example.com`) |
+| `GRAYLOG_TOKEN` | - | Graylog API token for authentication |
+| `GRAYLOG_STREAM_ID` | `686add4875a6c5ef0cd4bc44` | Graylog stream ID to search |
+| `GRAYLOG_TIMEOUT` | 10 | Graylog API request timeout in seconds |
+| `GRAYLOG_VERIFY_SSL` | false | Verify Graylog TLS certificate |
 
 **Changing the API Port:**
 ```bash
@@ -293,6 +309,21 @@ IPINFO_TOKEN=your_token_here docker-compose up -d
 ```
 
 > **Note:** This only affects the web UI Quick Lookup. The main `/check/ip` API used by Graylog is unchanged.
+
+**Graylog Firewall Enrichment (Web UI Only):**
+
+The Quick Lookup in the web UI can show firewall activity for IP addresses by querying your Graylog instance. When an IP is looked up, ThreatBridge searches the last 24 hours of firewall logs and displays denied/accepted traffic, top policies, destination ports, interfaces, and NAT translations.
+
+> **Note:** The enrichment parser currently expects FortiGate syslog fields (`action`, `policyname`, `policyid`, `dstport`, `srcintf`, `srcintfrole`, `tranip`, `tranport`). A future version will add a configurable parser to support any firewall vendor or message structure.
+
+```bash
+# Configure via environment variables:
+GRAYLOG_URL=https://graylog.example.com
+GRAYLOG_TOKEN=your_api_token
+GRAYLOG_STREAM_ID=your_stream_id  # Optional, has default
+```
+
+The dashboard also shows an **Enrichment Sources** panel with live health indicators for Graylog (connected/disconnected/not configured) and IPInfo (configured/not configured).
 
 </details>
 
@@ -503,6 +534,24 @@ sudo sysctl vm.overcommit_memory=1
 - Monitor for feed URL changes/hijacking
 
 ## Changelog
+
+<details>
+<summary><strong>v1.4.1 (2026-03-13)</strong> - Click to expand</summary>
+
+- **Enrichment Sources dashboard section** with live health indicators for Graylog and IPInfo
+- **Graylog health endpoint** with 60-second response cache
+- **IPInfo config status endpoint**
+
+</details>
+
+<details>
+<summary><strong>v1.4.0 (2026-03-13)</strong> - Click to expand</summary>
+
+- **Graylog firewall enrichment** for Quick Lookup — shows denied/accepted traffic, top policies, ports, interfaces, and NAT translations from the last 24 hours
+- **Prometheus metrics** for Graylog enrichment (counter + duration histogram)
+- Graylog environment variables for connection configuration
+
+</details>
 
 <details>
 <summary><strong>v1.3.0 (2025-12-06)</strong> - Click to expand</summary>
