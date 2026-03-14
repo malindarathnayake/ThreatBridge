@@ -5,6 +5,13 @@ All notable changes to ThreatBridge will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.1] - 2026-03-13
+
+### Added
+- **Enrichment Sources dashboard section**: New section on the management UI showing live connection status for Graylog and IPInfo enrichment sources. Graylog shows connected (green), disconnected (red) with error detail, or not configured (grey). IPInfo shows configured (green) or not configured (grey). Updates automatically with the 30-second dashboard refresh.
+- **Graylog health endpoint** (`/ui/health/graylog`): Pings Graylog with a minimal query to verify connectivity. Responses are cached for 60 seconds to avoid overloading Graylog.
+- **IPInfo health endpoint** (`/ui/health/ipinfo`): Reports whether an IPInfo token is configured. Does not call the IPInfo API.
+
 ## [1.4.0] - 2026-03-13
 
 ### Added
